@@ -1,0 +1,202 @@
+{
+  "name": "intellij-git-actions",
+  "displayName": "GI pro",
+  "description": "VS Code extension with IntelliJ-like Git commands and quick workflows.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Source Control"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:intellijGit.smartCommit",
+    "onCommand:intellijGit.fetch",
+    "onCommand:intellijGit.pullRebase",
+    "onCommand:intellijGit.push",
+    "onCommand:intellijGit.forcePushLease",
+    "onCommand:intellijGit.amendNoEdit",
+    "onCommand:intellijGit.interactiveRebase",
+    "onCommand:intellijGit.stash",
+    "onCommand:intellijGit.stashPop",
+    "onCommand:intellijGit.checkoutBranch",
+    "onCommand:intellijGit.compareFileWithHead",
+    "onCommand:intellijGit.showFileHistory",
+    "onCommand:intellijGit.showLogGraph",
+    "onCommand:intellijGit.openGitLogView",
+    "onCommand:intellijGit.cherryPick",
+    "onView:intellijGit.logView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "intellijGit.smartCommit",
+        "title": "Smart Commit",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.fetch",
+        "title": "Fetch All",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.pullRebase",
+        "title": "Pull with Rebase",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.push",
+        "title": "Push",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.forcePushLease",
+        "title": "Force Push with Lease",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.amendNoEdit",
+        "title": "Amend Commit Without Editing Message",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.interactiveRebase",
+        "title": "Interactive Rebase",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.stash",
+        "title": "Stash Changes",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.stashPop",
+        "title": "Pop Stash",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.checkoutBranch",
+        "title": "Checkout Branch",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.compareFileWithHead",
+        "title": "Compare File with HEAD",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.showFileHistory",
+        "title": "Show File History",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.showLogGraph",
+        "title": "Show Log Graph",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.openGitLogView",
+        "title": "Open Log View",
+        "category": "GI pro"
+      },
+      {
+        "command": "intellijGit.cherryPick",
+        "title": "Cherry-pick Commit",
+        "category": "GI pro"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "intellijGitPanel",
+          "title": "GI pro",
+          "icon": "media/git-log.svg"
+        }
+      ]
+    },
+    "views": {
+      "intellijGitPanel": [
+        {
+          "id": "intellijGit.logView",
+          "name": "Log",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "intellijGit.compareFileWithHead",
+          "group": "navigation@50",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "intellijGit.showFileHistory",
+          "group": "navigation@51",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "intellijGit.smartCommit",
+          "group": "navigation@1"
+        },
+        {
+          "command": "intellijGit.openGitLogView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "intellijGit.pullRebase",
+          "group": "navigation@3"
+        },
+        {
+          "command": "intellijGit.push",
+          "group": "navigation@4"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GI pro",
+      "properties": {
+        "intellijGit.terminalName": {
+          "type": "string",
+          "default": "IntelliJ Git",
+          "description": "Terminal name used to run Git commands."
+        },
+        "intellijGit.smartCommitPushAfterCommit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ask whether to push after a smart commit."
+        },
+        "intellijGit.inlineBlame.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline Git blame on the active cursor line."
+        },
+        "intellijGit.inlineBlame.delayMs": {
+          "type": "number",
+          "default": 50,
+          "minimum": 0,
+          "description": "Delay before refreshing inline Git blame after cursor movement."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.92.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.5.0"
+  }
+}
