@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { GitRunner, shellQuote } from './gitRunner';
 
@@ -6,6 +7,12 @@ type Branch = {
   type: 'local' | 'remote';
   current: boolean;
   upstream?: string;
+  tracking?: BranchTrackingStatus;
+};
+
+type BranchTrackingStatus = {
+  ahead: number;
+  behind: number;
 };
 
 type Commit = {
@@ -41,6 +48,12 @@ type CommitDetail = {
   files: ChangedFile[];
 };
 
+type BranchDiff = {
+  branch: string;
+  files: ChangedFile[];
+  selectedFile?: string;
+};
+
 type ViewState = {
   root: string;
   selectedBranch?: string;
@@ -48,6 +61,7 @@ type ViewState = {
   branches: Branch[];
   commits: Commit[];
   detail?: CommitDetail;
+  branchDiff?: BranchDiff;
   error?: string;
 };
 
@@ -63,22 +77,41 @@ type WebviewMessage = {
 
 let currentController: GitLogController | undefined;
 let currentProvider: GitLogViewProvider | undefined;
-const gitLogViewId = 'intellijGit.logView';
-const gitLogPanelId = 'intellijGitPanel';
+let currentBranchDiffProvider: BranchDiffTreeProvider | undefined;
+const gitLogViewId = 'giPro.logView';
+const branchDiffViewId = 'giPro.branchDiffView';
+const gitLogPanelId = 'giProPanel';
 
 export function registerGitLogView(context: vscode.ExtensionContext, git: GitRunner): void {
   currentProvider = new GitLogViewProvider(git);
+  currentBranchDiffProvider = new BranchDiffTreeProvider(git);
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(gitLogViewId, currentProvider, {
     webviewOptions: {
       retainContextWhenHidden: true
     }
   }));
+  const branchDiffTree = vscode.window.createTreeView(branchDiffViewId, {
+    treeDataProvider: currentBranchDiffProvider,
+    showCollapseAll: true
+  });
+  currentBranchDiffProvider.attachTree(branchDiffTree);
+  context.subscriptions.push(
+    branchDiffTree,
+    vscode.commands.registerCommand('giPro.branchDiff.refresh', () => currentBranchDiffProvider?.refresh()),
+    vscode.commands.registerCommand('giPro.branchDiff.getAll', () => currentBranchDiffProvider?.getAll()),
+    vscode.commands.registerCommand('giPro.branchDiff.openFile', (item?: BranchDiffTreeItem) => currentBranchDiffProvider?.openItem(item)),
+    vscode.commands.registerCommand('giPro.branchDiff.getFile', (item?: BranchDiffTreeItem) => currentBranchDiffProvider?.getItem(item))
+  );
 }
 
 export async function showGitLogView(context: vscode.ExtensionContext, git: GitRunner): Promise<void> {
   await openGitLogPanel();
   await vscode.commands.executeCommand(`${gitLogViewId}.focus`);
   await currentProvider?.render();
+}
+
+export async function showBranchDiffWithWorkingTree(_context: vscode.ExtensionContext, _git: GitRunner, branch: string): Promise<void> {
+  await showBranchDiffInScm(branch);
 }
 
 async function openGitLogPanel(): Promise<void> {
@@ -89,9 +122,24 @@ async function openGitLogPanel(): Promise<void> {
   }
 }
 
+async function openScmView(): Promise<void> {
+  try {
+    await vscode.commands.executeCommand('workbench.view.scm');
+  } catch {
+    // Older cached manifests or VS Code builds may not expose the SCM focus command.
+  }
+}
+
+async function showBranchDiffInScm(branch: string): Promise<void> {
+  await openScmView();
+  await vscode.commands.executeCommand(`${branchDiffViewId}.focus`);
+  await currentBranchDiffProvider?.showBranchDiff(branch);
+}
+
 class GitLogViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private controller: GitLogController | undefined;
+  private pendingBranchDiff: string | undefined;
 
   constructor(private readonly git: GitRunner) {}
 
@@ -107,18 +155,267 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     this.controller = new GitLogController(this.git, webviewView.webview, root.fsPath);
     currentController = this.controller;
     webviewView.webview.onDidReceiveMessage((message: unknown) => this.controller?.handleMessage(message));
+    if (this.pendingBranchDiff) {
+      const branch = this.pendingBranchDiff;
+      this.pendingBranchDiff = undefined;
+      await this.controller.showBranchDiff(branch);
+      return;
+    }
     await this.controller.render();
   }
 
   async render(): Promise<void> {
     await this.controller?.render();
   }
+
+  async showBranchDiff(branch: string): Promise<void> {
+    if (!this.controller) {
+      this.pendingBranchDiff = branch;
+      return;
+    }
+    await this.controller.showBranchDiff(branch);
+  }
+}
+
+class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeItem> {
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<BranchDiffTreeItem | undefined | null | void>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+  private branch: string | undefined;
+  private selectedFile: string | undefined;
+  private rootPath: string | undefined;
+  private diff: BranchDiff | undefined;
+  private tree: vscode.TreeView<BranchDiffTreeItem> | undefined;
+
+  constructor(private readonly git: GitRunner) {}
+
+  attachTree(tree: vscode.TreeView<BranchDiffTreeItem>): void {
+    this.tree = tree;
+  }
+
+  async showBranchDiff(branch: string): Promise<void> {
+    this.branch = branch;
+    this.selectedFile = undefined;
+    await this.refresh();
+  }
+
+  getTreeItem(element: BranchDiffTreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: BranchDiffTreeItem): BranchDiffTreeItem[] {
+    if (!this.branch) {
+      return [new BranchDiffMessageItem('Run Show Diff with Working Tree from a branch.')];
+    }
+    if (!this.diff) {
+      return [new BranchDiffMessageItem('Loading branch diff...')];
+    }
+    if (!this.diff.files.length) {
+      return [new BranchDiffMessageItem('No changed files')];
+    }
+    if (element instanceof BranchDiffFolderItem) {
+      return element.children;
+    }
+    return buildBranchDiffTree(this.diff.files);
+  }
+
+  async refresh(): Promise<void> {
+    if (!this.branch) {
+      this.diff = undefined;
+      await vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', false);
+      this.onDidChangeTreeDataEmitter.fire();
+      return;
+    }
+
+    try {
+      const root = await this.git.getWorkspaceRoot();
+      this.rootPath = root?.fsPath;
+      if (!this.rootPath) {
+        this.diff = undefined;
+        vscode.window.showErrorMessage('Open a folder before opening branch diff.');
+        return;
+      }
+      this.diff = await this.loadState(this.branch);
+      this.tree && (this.tree.message = `${this.branch} · ${this.diff.files.length} file${this.diff.files.length === 1 ? '' : 's'}`);
+      await vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', this.diff.files.length > 0);
+      this.onDidChangeTreeDataEmitter.fire();
+    } catch (error) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async openItem(item?: BranchDiffTreeItem): Promise<void> {
+    if (!(item instanceof BranchDiffFileItem) || !this.branch) {
+      return;
+    }
+    this.selectedFile = item.file.path;
+    await this.openBranchDiffFile(this.branch, item.file.path);
+  }
+
+  async getItem(item?: BranchDiffTreeItem): Promise<void> {
+    if (!(item instanceof BranchDiffFileItem) || !this.branch) {
+      return;
+    }
+    await this.getFileFromBranch(this.branch, item.file.path);
+    await this.refresh();
+  }
+
+  async getAll(): Promise<void> {
+    if (!this.branch) {
+      return;
+    }
+    await this.getAllDiffFilesFromBranch(this.branch);
+    await this.refresh();
+  }
+
+  private async loadState(branch: string): Promise<BranchDiff> {
+    const output = await this.git.exec(`git diff --name-status -M ${shellQuote(branch)} --`);
+    const files = splitLines(output).map(parseChangedFile).filter((file): file is ChangedFile => Boolean(file));
+    if (!this.selectedFile || !files.some((file) => file.path === this.selectedFile)) {
+      this.selectedFile = files[0]?.path;
+    }
+    return { branch, files, selectedFile: this.selectedFile };
+  }
+
+  private async openBranchDiffFile(branch: string, filePath: string): Promise<void> {
+    if (!this.rootPath) {
+      return;
+    }
+    const fileName = filePath.split('/').pop() || filePath;
+    const query = JSON.stringify({ ref: branch, path: filePath });
+    const branchUri = vscode.Uri.from({ scheme: 'gitpro', path: '/' + fileName, query });
+    const workingTreeUri = vscode.Uri.file(path.join(this.rootPath, filePath));
+    await vscode.commands.executeCommand('vscode.diff', branchUri, workingTreeUri, `${fileName} (${branch} ↔ Working Tree)`);
+  }
+
+  private async getFileFromBranch(branch: string, filePath: string): Promise<void> {
+    if (await pathExistsInRef(this.git, branch, filePath)) {
+      await this.git.exec(`git checkout ${shellQuote(branch)} -- ${shellQuote(filePath)}`);
+      vscode.window.showInformationMessage(`Got ${filePath} from ${branch}.`);
+      return;
+    }
+
+    const answer = await vscode.window.showWarningMessage(
+      `${filePath} does not exist in ${branch}. Remove it from the current working tree?`,
+      { modal: true },
+      'Remove'
+    );
+    if (answer === 'Remove') {
+      await this.git.exec(`git rm -f -- ${shellQuote(filePath)}`);
+      vscode.window.showInformationMessage(`Removed ${filePath}.`);
+    }
+  }
+
+  private async getAllDiffFilesFromBranch(branch: string): Promise<void> {
+    const diff = await this.loadState(branch);
+    if (!diff.files.length) {
+      vscode.window.showInformationMessage('No files to get from branch.');
+      return;
+    }
+
+    const answer = await vscode.window.showWarningMessage(
+      `Get ${diff.files.length} file${diff.files.length === 1 ? '' : 's'} from ${branch} into the current working tree?`,
+      { modal: true },
+      'Get All'
+    );
+    if (answer !== 'Get All') {
+      return;
+    }
+
+    const existing: string[] = [];
+    const missing: string[] = [];
+    for (const file of diff.files) {
+      if (await pathExistsInRef(this.git, branch, file.path)) {
+        existing.push(file.path);
+      } else {
+        missing.push(file.path);
+      }
+    }
+
+    if (existing.length) {
+      await this.git.exec(`git checkout ${shellQuote(branch)} -- ${existing.map((filePath) => shellQuote(filePath)).join(' ')}`);
+    }
+    if (missing.length) {
+      await this.git.exec(`git rm -f -- ${missing.map((filePath) => shellQuote(filePath)).join(' ')}`);
+    }
+    vscode.window.showInformationMessage(`Got ${diff.files.length} file${diff.files.length === 1 ? '' : 's'} from ${branch}.`);
+  }
+}
+
+type BranchDiffTreeItem = BranchDiffFolderItem | BranchDiffFileItem | BranchDiffMessageItem;
+
+class BranchDiffFolderItem extends vscode.TreeItem {
+  readonly children: BranchDiffTreeItem[] = [];
+
+  constructor(label: string) {
+    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    this.iconPath = new vscode.ThemeIcon('folder');
+    this.contextValue = 'giProBranchDiffFolder';
+  }
+}
+
+class BranchDiffFileItem extends vscode.TreeItem {
+  constructor(readonly file: ChangedFile) {
+    super(path.basename(file.path), vscode.TreeItemCollapsibleState.None);
+    this.description = file.status;
+    this.tooltip = file.previousPath ? `${file.previousPath} -> ${file.path}` : file.path;
+    this.resourceUri = vscode.Uri.file(file.path);
+    this.contextValue = 'giProBranchDiffFile';
+    this.command = {
+      command: 'giPro.branchDiff.openFile',
+      title: 'Open Diff',
+      arguments: [this]
+    };
+  }
+}
+
+class BranchDiffMessageItem extends vscode.TreeItem {
+  constructor(label: string) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = 'giProBranchDiffMessage';
+  }
+}
+
+function buildBranchDiffTree(files: ChangedFile[]): BranchDiffTreeItem[] {
+  const root = new BranchDiffFolderItem('');
+  for (const file of files) {
+    const parts = file.path.split('/').filter(Boolean);
+    let folder = root;
+    for (const part of parts.slice(0, -1)) {
+      let child = folder.children.find((item): item is BranchDiffFolderItem => item instanceof BranchDiffFolderItem && item.label === part);
+      if (!child) {
+        child = new BranchDiffFolderItem(part);
+        folder.children.push(child);
+      }
+      folder = child;
+    }
+    folder.children.push(new BranchDiffFileItem(file));
+  }
+  sortBranchDiffItems(root.children);
+  return root.children;
+}
+
+function sortBranchDiffItems(items: BranchDiffTreeItem[]): void {
+  items.sort((a, b) => {
+    const aFolder = a instanceof BranchDiffFolderItem;
+    const bFolder = b instanceof BranchDiffFolderItem;
+    if (aFolder !== bFolder) {
+      return aFolder ? -1 : 1;
+    }
+    return String(a.label).localeCompare(String(b.label));
+  });
+  for (const item of items) {
+    if (item instanceof BranchDiffFolderItem) {
+      sortBranchDiffItems(item.children);
+    }
+  }
 }
 
 class GitLogController {
   private selectedBranch: string | undefined;
   private selectedCommit: string | undefined;
-  private readonly outputChannel = vscode.window.createOutputChannel('GI pro Git');
+  private diffBranch: string | undefined;
+  private selectedDiffFile: string | undefined;
+  private readonly outputChannel = vscode.window.createOutputChannel('GI Pro Git');
 
   constructor(
     private readonly git: GitRunner,
@@ -129,6 +426,12 @@ class GitLogController {
   async render(): Promise<void> {
     const state = await this.loadState();
     this.webview.html = renderHtml(this.webview, state);
+  }
+
+  async showBranchDiff(branch: string): Promise<void> {
+    this.diffBranch = branch;
+    this.selectedDiffFile = undefined;
+    await this.render();
   }
 
   async handleMessage(raw: unknown): Promise<void> {
@@ -142,18 +445,48 @@ class GitLogController {
       if (message.type === 'selectBranch') {
         this.selectedBranch = message.branch || undefined;
         this.selectedCommit = undefined;
+        this.diffBranch = undefined;
+        this.selectedDiffFile = undefined;
         await this.render();
         return;
       }
 
       if (message.type === 'selectCommit' && isCommitHash(message.hash)) {
         this.selectedCommit = message.hash;
+        this.diffBranch = undefined;
+        this.selectedDiffFile = undefined;
         await this.render();
         return;
       }
 
       if (message.type === 'openDiff' && isCommitHash(this.selectedCommit) && message.file) {
         await this.openFileDiff(this.selectedCommit, message.file);
+        return;
+      }
+
+      if (message.type === 'openBranchDiffFile' && this.diffBranch && message.file) {
+        this.selectedDiffFile = message.file;
+        await this.openBranchDiffFile(this.diffBranch, message.file);
+        await this.render();
+        return;
+      }
+
+      if (message.type === 'getDiffFile' && this.diffBranch && message.file) {
+        await this.getFileFromBranch(this.diffBranch, message.file);
+        await this.render();
+        return;
+      }
+
+      if (message.type === 'getDiffAll' && this.diffBranch) {
+        await this.getAllDiffFilesFromBranch(this.diffBranch);
+        await this.render();
+        return;
+      }
+
+      if (message.type === 'closeBranchDiff') {
+        this.diffBranch = undefined;
+        this.selectedDiffFile = undefined;
+        await this.render();
         return;
       }
 
@@ -180,6 +513,16 @@ class GitLogController {
         if (message.action !== 'copyRevisionNumber') {
           await this.render();
         }
+        return;
+      }
+
+      if (message.type === 'newBranch') {
+        if (isCommitHash(message.hash)) {
+          await this.newBranchFromCommit(message.hash);
+        } else {
+          await this.newBranchFromHead();
+        }
+        await this.render();
         return;
       }
 
@@ -268,7 +611,7 @@ class GitLogController {
         }
         return;
       case 'diffWithWorkingTree':
-        await this.showGitOutput(`git diff ${shellQuote(branch)}`, `Diff with ${branch}`);
+        await showBranchDiffInScm(branch);
         return;
       case 'rebaseCurrentOnto':
         await this.runGitAction(`git rebase ${shellQuote(branch)}`, 'Rebase completed.');
@@ -322,6 +665,20 @@ class GitLogController {
     });
     if (name) {
       await this.runGitAction(`git checkout -b ${shellQuote(name)} ${hash}`, 'Branch created.');
+      this.selectedBranch = name;
+    }
+  }
+
+  private async newBranchFromHead(): Promise<void> {
+    const currentBranch = await this.getCurrentBranch();
+    const name = await vscode.window.showInputBox({
+      prompt: currentBranch ? `New branch from ${currentBranch}` : 'New branch from HEAD',
+      placeHolder: 'feature/my-branch',
+      ignoreFocusOut: true,
+      validateInput: validateBranchName
+    });
+    if (name) {
+      await this.runGitAction(`git checkout -b ${shellQuote(name)}`, 'Branch created.');
       this.selectedBranch = name;
     }
   }
@@ -412,7 +769,7 @@ class GitLogController {
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine(output || '(no output)');
     this.outputChannel.show(true);
-    vscode.window.showInformationMessage(`${title} opened in GI pro Git output.`);
+    vscode.window.showInformationMessage(`${title} opened in GI Pro Git output.`);
   }
 
   private async getCurrentBranch(): Promise<string | undefined> {
@@ -428,13 +785,84 @@ class GitLogController {
     await vscode.commands.executeCommand('vscode.diff', beforeUri, afterUri, `${fileName} (${hash.slice(0, 8)})`);
   }
 
+  private async openBranchDiffFile(branch: string, filePath: string): Promise<void> {
+    const fileName = filePath.split('/').pop() || filePath;
+    const query = JSON.stringify({ ref: branch, path: filePath });
+    const branchUri = vscode.Uri.from({ scheme: 'gitpro', path: '/' + fileName, query });
+    const workingTreeUri = vscode.Uri.file(path.join(this.rootPath, filePath));
+    await vscode.commands.executeCommand('vscode.diff', branchUri, workingTreeUri, `${fileName} (${branch} ↔ Working Tree)`);
+  }
+
+  private async getFileFromBranch(branch: string, filePath: string): Promise<void> {
+    if (await this.pathExistsInRef(branch, filePath)) {
+      await this.runGitAction(`git checkout ${shellQuote(branch)} -- ${shellQuote(filePath)}`, `Got ${filePath} from ${branch}.`);
+      return;
+    }
+
+    const answer = await vscode.window.showWarningMessage(
+      `${filePath} does not exist in ${branch}. Remove it from the current working tree?`,
+      { modal: true },
+      'Remove'
+    );
+    if (answer === 'Remove') {
+      await this.runGitAction(`git rm -f -- ${shellQuote(filePath)}`, `Removed ${filePath}.`);
+    }
+  }
+
+  private async getAllDiffFilesFromBranch(branch: string): Promise<void> {
+    const diff = await this.loadBranchDiff(branch);
+    if (!diff.files.length) {
+      vscode.window.showInformationMessage('No files to get from branch.');
+      return;
+    }
+
+    const answer = await vscode.window.showWarningMessage(
+      `Get ${diff.files.length} file${diff.files.length === 1 ? '' : 's'} from ${branch} into the current working tree?`,
+      { modal: true },
+      'Get All'
+    );
+    if (answer !== 'Get All') {
+      return;
+    }
+
+    const existing: string[] = [];
+    const missing: string[] = [];
+    for (const file of diff.files) {
+      if (await this.pathExistsInRef(branch, file.path)) {
+        existing.push(file.path);
+      } else {
+        missing.push(file.path);
+      }
+    }
+
+    if (existing.length) {
+      const paths = existing.map((filePath) => shellQuote(filePath)).join(' ');
+      await this.runGitAction(`git checkout ${shellQuote(branch)} -- ${paths}`);
+    }
+    if (missing.length) {
+      const paths = missing.map((filePath) => shellQuote(filePath)).join(' ');
+      await this.runGitAction(`git rm -f -- ${paths}`);
+    }
+    vscode.window.showInformationMessage(`Got ${diff.files.length} file${diff.files.length === 1 ? '' : 's'} from ${branch}.`);
+  }
+
+  private async pathExistsInRef(ref: string, filePath: string): Promise<boolean> {
+    try {
+      await this.git.exec(`git cat-file -e ${shellQuote(ref + ':' + filePath)}`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async loadState(): Promise<ViewState> {
     try {
       const branches = await this.loadBranches();
       const commits = await this.loadCommits(branches);
       const selectedCommit = this.selectVisibleCommit(commits);
       this.selectedCommit = selectedCommit;
-      const detail = selectedCommit ? await this.loadCommitDetail(selectedCommit) : undefined;
+      const branchDiff = this.diffBranch ? await this.loadBranchDiff(this.diffBranch) : undefined;
+      const detail = !branchDiff && selectedCommit ? await this.loadCommitDetail(selectedCommit) : undefined;
 
       return {
         root: this.rootPath,
@@ -442,7 +870,8 @@ class GitLogController {
         selectedCommit,
         branches,
         commits,
-        detail
+        detail,
+        branchDiff
       };
     } catch (error) {
       return {
@@ -457,14 +886,20 @@ class GitLogController {
   }
 
   private async loadBranches(): Promise<Branch[]> {
-    const local = await this.git.exec('git branch --format="%(refname:short)%09%(HEAD)"');
+    const local = await this.git.exec("git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)' refs/heads");
     const remote = await this.git.exec('git branch -r --format="%(refname:short)"');
     const branches: Branch[] = [];
 
     for (const line of splitLines(local)) {
-      const [name, head] = line.split('\t');
+      const [name, head, upstream, trackingText] = line.split('\t');
       if (name) {
-        branches.push({ name, type: 'local', current: head === '*' });
+        branches.push({
+          name,
+          type: 'local',
+          current: head === '*',
+          upstream: upstream || undefined,
+          tracking: parseTrackingStatus(trackingText)
+        });
       }
     }
 
@@ -476,6 +911,19 @@ class GitLogController {
     }
 
     return branches;
+  }
+
+  private async loadBranchDiff(branch: string): Promise<BranchDiff> {
+    const output = await this.git.exec(`git diff --name-status -M ${shellQuote(branch)} --`);
+    const files = splitLines(output).map(parseChangedFile).filter((file): file is ChangedFile => Boolean(file));
+    if (!this.selectedDiffFile || !files.some((file) => file.path === this.selectedDiffFile)) {
+      this.selectedDiffFile = files[0]?.path;
+    }
+    return {
+      branch,
+      files,
+      selectedFile: this.selectedDiffFile
+    };
   }
 
   private selectVisibleCommit(commits: Commit[]): string | undefined {
@@ -591,6 +1039,21 @@ function parseChangedFile(line: string): ChangedFile | undefined {
   }
 
   return { status, path: first };
+}
+
+function parseTrackingStatus(value: string | undefined): BranchTrackingStatus {
+  const ahead = Number(value?.match(/ahead (\d+)/)?.[1] ?? 0);
+  const behind = Number(value?.match(/behind (\d+)/)?.[1] ?? 0);
+  return { ahead, behind };
+}
+
+async function pathExistsInRef(git: GitRunner, ref: string, filePath: string): Promise<boolean> {
+  try {
+    await git.exec(`git cat-file -e ${shellQuote(ref + ':' + filePath)}`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderHtml(webview: vscode.Webview, state: ViewState): string {
@@ -1077,6 +1540,18 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       color: var(--current-icon);
       font-size: 15px;
     }
+    .tree-icon.behind-icon {
+      color: var(--orange);
+      font-size: 15px;
+    }
+    .tree-icon.ahead-icon {
+      color: var(--branch-icon);
+      font-size: 15px;
+    }
+    .tree-icon.diverged-icon {
+      color: var(--purple);
+      font-size: 15px;
+    }
     .tree-icon.tag-icon {
       color: var(--tag-icon);
       font-size: 15px;
@@ -1093,11 +1568,26 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .tree-level-9 { padding-left: 120px; }
     .tree-level-10 { padding-left: 132px; }
     .tree-name, .branch .name {
+      flex: 1 1 auto;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .branch-status {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      flex: 0 0 auto;
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .track-behind { color: var(--orange); }
+    .track-ahead { color: var(--branch-icon); }
+    .track-diverged { color: var(--purple); }
     .branch .meta {
       margin-left: auto;
       color: var(--muted);
@@ -1109,7 +1599,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .commit-row {
       display: grid;
-      grid-template-columns: 150px minmax(100px, 1fr) 150px 120px;
+      grid-template-columns: 170px minmax(100px, 1fr) 150px 120px;
       gap: 8px;
       height: 22px;
       align-items: center;
@@ -1119,28 +1609,37 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       overflow: hidden;
     }
     .graph-row {
-      display: none;
-      height: 0;
+      display: grid;
+      grid-template-columns: 170px minmax(100px, 1fr) 150px 120px;
+      gap: 8px;
+      height: 10px;
+      padding: 0 10px 0 0;
       overflow: hidden;
     }
     .graph-row.angled {
-      height: 0;
+      height: 10px;
     }
     .graph {
-      width: 150px;
+      width: 170px;
       height: 22px;
+      font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
+      font-size: 15px;
+      line-height: 22px;
+      white-space: pre;
+      color: var(--muted);
+      overflow: hidden;
     }
     .graph-layer {
       position: absolute;
       inset: 0 auto auto 0;
-      width: 150px;
+      width: 170px;
       pointer-events: none;
       z-index: 2;
       overflow: hidden;
     }
     .graph-layer svg {
       display: block;
-      width: 150px;
+      width: 170px;
     }
     .graph-line {
       fill: none;
@@ -1153,6 +1652,30 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       stroke: var(--dot-stroke);
       stroke-width: 2;
     }
+    .graph-char {
+      display: inline-flex;
+      width: 9px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
+      vertical-align: top;
+    }
+    .graph-node {
+      display: contents;
+    }
+    .graph-row .graph,
+    .graph-row .graph-char {
+      height: 10px;
+      line-height: 10px;
+    }
+    .lane-0 { color: #8f9b3a; }
+    .lane-1 { color: #bd5165; }
+    .lane-2 { color: #4fa06f; }
+    .lane-3 { color: #8b54c4; }
+    .lane-4 { color: #b88445; }
+    .lane-5 { color: #54a0a8; }
+    .lane-6 { color: #4f6fc7; }
+    .lane-7 { color: #d0a13d; }
     .subject {
       min-width: 0;
       overflow: hidden;
@@ -1170,6 +1693,23 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       color: var(--ref-color);
       font-size: 11px;
       font-weight: 600;
+    }
+    .ref.current-ref {
+      color: var(--current-icon);
+    }
+    .ref.behind-ref {
+      color: var(--orange);
+    }
+    .ref.ahead-ref {
+      color: var(--branch-icon);
+    }
+    .ref.diverged-ref {
+      color: var(--purple);
+    }
+    .ref-track {
+      margin-left: 3px;
+      font-size: 10px;
+      font-weight: 700;
     }
     .author, .date {
       color: var(--muted);
@@ -1218,6 +1758,50 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       min-height: 30px;
       cursor: pointer;
     }
+    .diff-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card-bg);
+    }
+    .diff-title {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .diff-count {
+      color: var(--muted);
+      font-weight: 500;
+      margin-left: 6px;
+    }
+    .mini-button {
+      flex: 0 0 auto;
+      height: 24px;
+      padding: 0 8px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      line-height: 22px;
+    }
+    .mini-button:hover {
+      background: var(--panel-2);
+    }
+    .file-row .mini-button {
+      margin-left: auto;
+      opacity: 0;
+    }
+    .file-row:hover .mini-button,
+    .file-row.active .mini-button {
+      opacity: 1;
+    }
     .status {
       width: 38px;
       flex: 0 0 38px;
@@ -1244,8 +1828,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       .app {
         grid-template-columns: var(--sidebar-width, 220px) 6px minmax(320px, 1fr) 6px var(--detail-width, 340px);
       }
-      .commit-row { grid-template-columns: 120px minmax(100px, 1fr) 130px 100px; }
-      .graph, .graph-layer, .graph-layer svg { width: 120px; }
+      .commit-row { grid-template-columns: 150px minmax(100px, 1fr) 130px 100px; }
+      .graph, .graph-layer, .graph-layer svg { width: 150px; }
     }
   </style>
 </head>
@@ -1255,6 +1839,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    const vscode = acquireVsCodeApi();
 	    const state = ${json};
 	    const currentBranch = state.branches.find((branch) => branch.current)?.name;
+	    const branchesByName = new Map(state.branches.map((branch) => [branch.name, branch]));
 	    const persistedViewState = vscode.getState() || {};
 	    const commitFilters = {
 	      query: persistedViewState.commitFilters?.query || '',
@@ -1266,6 +1851,11 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    const paneSizes = {
 	      sidebar: persistedViewState.paneSizes?.sidebar || 280,
 	      detail: persistedViewState.paneSizes?.detail || 420
+	    };
+	    const scrollTops = {
+	      branches: persistedViewState.scrollTops?.branches || 0,
+	      commits: persistedViewState.scrollTops?.commits || 0,
+	      files: persistedViewState.scrollTops?.files || 0
 	    };
 	    const selectedCommitHashes = new Set(state.selectedCommit ? [state.selectedCommit] : []);
 	    let lastSelectedCommitHash = state.selectedCommit;
@@ -1283,7 +1873,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          branches: Array.from(commitFilters.branches),
 	          users: Array.from(commitFilters.users)
 	        },
-	        paneSizes
+	        paneSizes,
+	        scrollTops
 	      });
 	    }
 
@@ -1326,11 +1917,46 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
 	    function refLabels(refs) {
 	      if (!refs || refs.length === 0) return '';
-	      return '<span class="refs">' + refs.slice(0, 3).map((ref) => '<span class="ref">' + html(ref.replace('HEAD -> ', '')) + '</span>').join('') + '</span>';
+	      return '<span class="refs">' + refs.slice(0, 3).map(renderRefLabel).join('') + '</span>';
+	    }
+
+	    function renderRefLabel(ref) {
+	      const name = refName(ref);
+	      const branch = branchesByName.get(name);
+	      const className = branch ? branchStatusClass(branch, 'ref') : 'ref';
+	      const tracking = branch ? trackingText(branch.tracking, true) : '';
+	      return '<span class="' + className + '">' + html(name) + (tracking ? '<span class="ref-track">' + html(tracking) + '</span>' : '') + '</span>';
 	    }
 
 	    function refName(ref) {
 	      return String(ref || '').replace('HEAD -> ', '').trim();
+	    }
+
+	    function trackingText(tracking, compact) {
+	      const ahead = Number(tracking?.ahead || 0);
+	      const behind = Number(tracking?.behind || 0);
+	      const parts = [];
+	      if (behind) parts.push('↓' + (compact ? '' : ' ') + behind);
+	      if (ahead) parts.push('↑' + (compact ? '' : ' ') + ahead);
+	      return parts.join(compact ? ' ' : '  ');
+	    }
+
+	    function branchStatusClass(branch, target) {
+	      const tracking = branch?.tracking || {};
+	      const ahead = Number(tracking.ahead || 0);
+	      const behind = Number(tracking.behind || 0);
+	      if (target === 'status') {
+	        if (ahead && behind) return 'track-diverged';
+	        if (behind) return 'track-behind';
+	        if (ahead) return 'track-ahead';
+	        return '';
+	      }
+	      const prefix = target === 'ref' ? 'ref ' : 'tree-icon ';
+	      if (branch?.current) return prefix + (target === 'ref' ? 'current-ref' : 'current-icon');
+	      if (ahead && behind) return prefix + (target === 'ref' ? 'diverged-ref' : 'diverged-icon');
+	      if (behind) return prefix + (target === 'ref' ? 'behind-ref' : 'behind-icon');
+	      if (ahead) return prefix + (target === 'ref' ? 'ahead-ref' : 'ahead-icon');
+	      return prefix + (target === 'ref' ? '' : 'branch-icon');
 	    }
 
 	    function branchFilterOptions() {
@@ -1376,6 +2002,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        '</div>' +
 	        renderFilterDropdown('branches', 'Branch', branchFilterOptions(), commitFilters.branches) +
 	        renderFilterDropdown('users', 'User', userFilterOptions(), commitFilters.users) +
+	        '<button class="icon-button" title="New Branch from selected commit" data-action="newBranch">' + branchIcon() + '</button>' +
 	        '<button class="icon-button" title="Refresh" data-action="refresh">↻</button>' +
 	        '</div>';
 	    }
@@ -1424,12 +2051,22 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
         const branch = entry.branch;
         const active = state.selectedBranch === branch.name || (!state.selectedBranch && branch.current);
-        const iconClass = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? 'current-icon' : branch.displayName.includes('responsive') ? 'tag-icon' : 'branch-icon';
-        const icon = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? '★' : branch.displayName.includes('responsive') ? tagIcon() : branchIcon();
+        const iconClass = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? 'tree-icon current-icon' : branchStatusClass(branch, 'tree');
+        const icon = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? '★' : branchIcon();
+        const status = renderBranchStatus(branch);
         return '<div class="tree-row branch ' + treeLevel(depth) + ' ' + (active ? 'active' : '') + '" data-branch="' + html(branch.name) + '" data-branch-type="' + html(branch.type) + '" data-branch-current="' + String(Boolean(branch.current)) + '" data-depth="' + depth + '">' +
-          '<span class="tree-chevron" aria-hidden="true"></span><span class="tree-icon ' + iconClass + '">' + icon + '</span><span class="tree-name">' + html(branch.displayName) + '</span>' +
+          '<span class="tree-chevron" aria-hidden="true"></span><span class="' + iconClass + '">' + icon + '</span><span class="tree-name">' + html(branch.displayName) + '</span>' + status +
         '</div>';
       }).join('');
+    }
+
+    function renderBranchStatus(branch) {
+      const tracking = trackingText(branch.tracking, false);
+      if (!tracking) return '';
+      const statusClass = branchStatusClass(branch, 'status');
+      return '<span class="branch-status ' + statusClass + '">' +
+        '<span>' + html(tracking) + '</span>' +
+      '</span>';
     }
 
     function renderBranchContextMenu() {
@@ -1497,6 +2134,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       ];
     }
 
+    function renderAsciiGraph(graph) {
+      return html(graph || '*').split('').map((char, index) => {
+        const laneClass = 'lane-' + (Math.floor(index / 2) % 8);
+        return '<span class="graph-char ' + laneClass + '">' + (char === ' ' ? '&nbsp;' : char) + '</span>';
+      }).join('');
+    }
+
 	    function renderCommits(commits = state.commits) {
 	      if (state.error) return '<div class="error">' + html(state.error) + '</div>';
 	      if (!commits.length) return '<div class="empty">No commits found</div>';
@@ -1505,13 +2149,16 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        const active = selectedCommitHashes.has(commit.hash);
 	        const isMerge = commit.parents.length > 1;
 	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '">' +
-          '<div class="graph"></div>' +
+          '<div class="graph">' + renderAsciiGraph(commit.graph) + '</div>' +
           '<div class="subject">' + html(commit.subject) + refLabels(commit.refs) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
           '<div class="date">' + html(formatDate(commit.date)) + '</div>' +
 	        '</div>';
+          commit.postLines.forEach((line) => {
+            rows += '<div class="graph-row angled"><div class="graph">' + renderAsciiGraph(line) + '</div><div></div><div></div><div></div></div>';
+          });
 	      });
-	      return '<div class="graph-layer">' + renderGraphLayer(commits) + '</div>' + rows;
+	      return rows;
 	    }
 
     function renderGraphLayer(commits) {
@@ -1520,47 +2167,81 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       }
 
       const colors = ['#9aa640', '#c34f65', '#4fa06f', '#9446ad', '#b88445', '#54a0a8', '#4f6fc7', '#d0a13d'];
-      const lane = 16;
       const commitRowH = 22;
-      const width = 150;
-      const height = commits.length * commitRowH;
-      const pieces = [];
-      const colorAt = (index) => colors[Math.floor(index / 2) % colors.length];
-      const xAt = (index) => 10 + index * (lane / 2);
-      const nodeForCommit = (commit, index) => {
-        const dotIndex = Math.max(0, (commit.graph || '*').split('').indexOf('*'));
-        return {
-          hash: commit.hash,
-          x: xAt(dotIndex),
-          y: index * commitRowH + commitRowH / 2,
-          color: colorAt(dotIndex)
-        };
-      };
-      const line = (fromX, fromY, toX, toY, color) => {
-        pieces.push('<path class="graph-line" d="M' + fromX + ' ' + fromY + ' L' + toX + ' ' + toY + '" stroke="' + color + '"/>');
-      };
-
-      const nodes = commits.map(nodeForCommit);
-      const nodesByHash = new Map(nodes.map((node) => [node.hash, node]));
-
+      const width = 170;
+      const graphRows = [];
       commits.forEach((commit, index) => {
-        const node = nodes[index];
-        commit.parents.forEach((parentHash) => {
-          const parent = nodesByHash.get(parentHash);
-          if (parent) {
-            line(node.x, node.y, parent.x, parent.y, node.color);
-          }
+        const commitY = index * commitRowH + commitRowH / 2;
+        graphRows.push({ graph: commit.graph || '*', commit, y: commitY });
+
+        const nextY = (index + 1) * commitRowH + commitRowH / 2;
+        const postLines = commit.postLines || [];
+        postLines.forEach((line, lineIndex) => {
+          graphRows.push({
+            graph: line,
+            y: commitY + ((lineIndex + 1) * (nextY - commitY)) / (postLines.length + 1)
+          });
         });
       });
+      const height = commits.length * commitRowH;
+      const pieces = [];
+      const graphWidth = Math.max(1, ...graphRows.map((row) => row.graph.length));
+      const charWidth = Math.max(7, Math.min(11, Math.floor((width - 24) / graphWidth)));
+      const xAt = (charIndex) => 12 + charIndex * charWidth;
+      const colorAt = (charIndex) => colors[Math.floor(charIndex / 2) % colors.length];
+      const path = (d, color) => {
+        pieces.push('<path class="graph-line" d="' + d + '" stroke="' + color + '"/>');
+      };
 
-      nodes.forEach((node) => {
-        pieces.push('<circle class="graph-dot" cx="' + node.x + '" cy="' + node.y + '" r="5" fill="' + node.color + '"/>');
+      graphRows.forEach((graphRow, row) => {
+        const graph = graphRow.graph;
+        const y = graphRow.y;
+        const previousY = graphRows[row - 1]?.y ?? Math.max(0, y - commitRowH / 2);
+        const nextY = graphRows[row + 1]?.y ?? Math.min(height, y + commitRowH / 2);
+        const renderTop = (previousY + y) / 2;
+        const renderBottom = (nextY + y) / 2;
+
+        for (let index = 0; index < graph.length; index++) {
+          const char = graph[index];
+          const x = xAt(index);
+          const color = colorAt(index);
+
+          if (char === '|') {
+            path('M' + x + ' ' + renderTop + ' L' + x + ' ' + renderBottom, color);
+          } else if (char === '*') {
+            const previousGraph = graphRows[row - 1]?.graph || '';
+            const nextGraph = graphRows[row + 1]?.graph || '';
+            const connectsUp = previousGraph[index] === '|' || previousGraph[index] === '*' || previousGraph.charCodeAt(index) === 92 || previousGraph[index] === '/';
+            const connectsDown = nextGraph[index] === '|' || nextGraph[index] === '*' || nextGraph.charCodeAt(index) === 92 || nextGraph[index] === '/';
+            if (connectsUp || connectsDown) {
+              path(
+                'M' + x + ' ' + (connectsUp ? renderTop : y) + ' L' + x + ' ' + (connectsDown ? renderBottom : y),
+                color
+              );
+            }
+          } else if (char === '/') {
+            path('M' + xAt(Math.max(0, index - 1)) + ' ' + renderBottom + ' L' + xAt(index + 1) + ' ' + renderTop, color);
+          } else if (char.charCodeAt(0) === 92) {
+            path('M' + xAt(Math.max(0, index - 1)) + ' ' + renderTop + ' L' + xAt(index + 1) + ' ' + renderBottom, color);
+          } else if (char === '-' || char === '_') {
+            path('M' + xAt(Math.max(0, index - 1)) + ' ' + y + ' L' + xAt(index + 1) + ' ' + y, color);
+          }
+        }
+      });
+
+      graphRows.forEach((graphRow, row) => {
+        if (!graphRow.commit) {
+          return;
+        }
+        const dotIndex = Math.max(0, graphRow.graph.indexOf('*'));
+        pieces.push('<circle class="graph-dot" cx="' + xAt(dotIndex) + '" cy="' + graphRow.y + '" r="5" fill="' + colorAt(dotIndex) + '"/>');
       });
 
       return '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" overflow="hidden" aria-hidden="true">' + pieces.join('') + '</svg>';
     }
 
     function renderDetail() {
+      if (state.branchDiff) return renderBranchDiff();
       const detail = state.detail;
       if (!detail) return '<div class="empty">Select a commit</div>';
       const files = renderFileTree(buildFileTree(detail.files));
@@ -1572,6 +2253,17 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           '<span>Date</span><span>' + html(formatDetailDate(detail.authorDate)) + '</span>' +
           '<span>Refs</span><span>' + html(detail.refs.join(', ') || '-') + '</span>' +
         '</div>' +
+      '</div>' +
+      '<div class="file-list">' + (files || '<div class="empty">No changed files</div>') + '</div>';
+    }
+
+    function renderBranchDiff() {
+      const diff = state.branchDiff;
+      const files = renderFileTree(buildFileTree(diff.files), { mode: 'branchDiff', selectedFile: diff.selectedFile });
+      return '<div class="diff-toolbar">' +
+        '<div class="diff-title">Diff with Working Tree <span class="diff-count">' + html(diff.files.length + ' file' + (diff.files.length === 1 ? '' : 's')) + '</span></div>' +
+        '<button class="mini-button" type="button" data-action="getDiffAll"' + (diff.files.length ? '' : ' disabled') + '>Get All</button>' +
+        '<button class="mini-button" type="button" data-action="closeBranchDiff">Close</button>' +
       '</div>' +
       '<div class="file-list">' + (files || '<div class="empty">No changed files</div>') + '</div>';
     }
@@ -1592,18 +2284,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       return root;
     }
 
-    function renderFileTree(node, depth = 0) {
+    function renderFileTree(node, options = {}, depth = 0) {
       const folders = Array.from(node.folders.values()).sort((a, b) => a.name.localeCompare(b.name));
       const files = node.files.sort((a, b) => a.displayName.localeCompare(b.displayName));
       return folders.map((folder) => (
         '<div class="tree-row folder ' + treeLevel(depth) + '" data-file-folder data-tree="file" data-depth="' + depth + '">' +
           '<span class="tree-chevron" aria-hidden="true"></span><span class="tree-icon folder-icon">' + folderIcon() + '</span><span class="tree-name">' + html(folder.name) + '</span>' +
-        '</div>' + renderFileTree(folder, depth + 1)
+        '</div>' + renderFileTree(folder, options, depth + 1)
       )).join('') + files.map((file) => {
         const key = file.status.charAt(0);
-        return '<div class="tree-row file file-row ' + treeLevel(depth) + '" data-file="' + html(file.path) + '" data-depth="' + depth + '">' +
+        const selected = options.selectedFile === file.path ? ' active' : '';
+        const modeAttr = options.mode ? ' data-file-mode="' + html(options.mode) + '"' : '';
+        const action = options.mode === 'branchDiff' ? '<button class="mini-button" type="button" data-get-file="' + html(file.path) + '">Get</button>' : '';
+        return '<div class="tree-row file file-row ' + treeLevel(depth) + selected + '" data-file="' + html(file.path) + '"' + modeAttr + ' data-depth="' + depth + '">' +
           '<span class="status ' + html(key) + '">' + html(file.status) + '</span>' +
-          '<span class="tree-name">' + html(file.previousPath ? file.previousPath + ' -> ' + file.displayName : file.displayName) + '</span>' +
+          '<span class="tree-name">' + html(file.previousPath ? file.previousPath + ' -> ' + file.displayName : file.displayName) + '</span>' + action +
         '</div>';
       }).join('');
     }
@@ -1642,6 +2337,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         renderBranchContextMenu() +
         renderCommitContextMenu();
       wire();
+      restoreScrollPositions();
     }
 
 	    function wire() {
@@ -1658,7 +2354,18 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         node.addEventListener('click', () => {
           document.querySelectorAll('[data-file]').forEach((n) => n.classList.remove('active'));
           node.classList.add('active');
-          send({ type: 'openDiff', file: node.dataset.file });
+          if (node.dataset.fileMode === 'branchDiff') {
+            send({ type: 'openBranchDiffFile', file: node.dataset.file });
+          } else {
+            send({ type: 'openDiff', file: node.dataset.file });
+          }
+        });
+      });
+      document.querySelectorAll('[data-get-file]').forEach((node) => {
+        node.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          send({ type: 'getDiffFile', file: node.dataset.getFile });
         });
       });
 	      document.querySelectorAll('[data-branch-folder], [data-file-folder]').forEach((node) => {
@@ -1692,11 +2399,32 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		      });
 		      document.querySelectorAll('.branch-list, .commit-list, .file-list, .patch').forEach((node) => {
 		        node.addEventListener('scroll', () => {
+		          updateScrollState(node);
 		          closeBranchContextMenu();
 		          closeCommitContextMenu();
 		          closeFilterDropdowns();
 		        });
 		      });
+	    }
+
+	    function restoreScrollPositions() {
+	      const branches = document.getElementById('branches');
+	      const commits = document.getElementById('commits');
+	      const files = document.querySelector('.file-list');
+	      if (branches) branches.scrollTop = scrollTops.branches;
+	      if (commits) commits.scrollTop = scrollTops.commits;
+	      if (files) files.scrollTop = scrollTops.files;
+	    }
+
+	    function updateScrollState(node) {
+	      if (node.id === 'branches') {
+	        scrollTops.branches = node.scrollTop;
+	      } else if (node.id === 'commits') {
+	        scrollTops.commits = node.scrollTop;
+	      } else if (node.classList.contains('file-list')) {
+	        scrollTops.files = node.scrollTop;
+	      }
+	      persistViewState();
 	    }
 
 	    function wireCommitRows() {
@@ -1721,6 +2449,11 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		      selectedCommitHashes.add(hash);
 		      lastSelectedCommitHash = hash;
 		      updateCommitSelectionUi();
+		      const commits = document.getElementById('commits');
+		      if (commits) {
+		        scrollTops.commits = commits.scrollTop;
+		        persistViewState();
+		      }
 		      send({ type: 'selectCommit', hash });
 		    }
 
@@ -1751,6 +2484,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		        node.addEventListener('click', () => {
 		          const action = node.dataset.action;
 		          if (action === 'refresh') send({ type: 'refresh' });
+		          if (action === 'getDiffAll') send({ type: 'getDiffAll' });
+		          if (action === 'closeBranchDiff') send({ type: 'closeBranchDiff' });
+		          if (action === 'newBranch') {
+		            const hash = lastSelectedCommitHash || Array.from(selectedCommitHashes)[0];
+		            send({ type: 'newBranch', hash });
+		          }
 		        });
 	      });
 	    }

@@ -47,7 +47,7 @@ class InlineBlameController implements vscode.Disposable {
         }
       }),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration('intellijGit.inlineBlame')) {
+        if (event.affectsConfiguration('giPro.inlineBlame')) {
           this.scheduleRefresh(0);
         }
       })
@@ -171,11 +171,11 @@ class InlineBlameController implements vscode.Disposable {
   }
 
   private isEnabled(): boolean {
-    return vscode.workspace.getConfiguration('intellijGit.inlineBlame').get<boolean>('enabled', true);
+    return vscode.workspace.getConfiguration('giPro.inlineBlame').get<boolean>('enabled', true);
   }
 
   private getDelay(): number {
-    const delay = vscode.workspace.getConfiguration('intellijGit.inlineBlame').get<number>('delayMs', 50);
+    const delay = vscode.workspace.getConfiguration('giPro.inlineBlame').get<number>('delayMs', 50);
     return Math.max(0, delay);
   }
 }

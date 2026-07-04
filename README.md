@@ -1,4 +1,4 @@
-# IntelliJ Git Actions
+# GI Pro Actions
 
 VS Code extension prototype for Git workflows similar to IntelliJ IDEA.
 
@@ -12,7 +12,7 @@ VS Code extension prototype for Git workflows similar to IntelliJ IDEA.
 - Compare current file with `HEAD`.
 - Show file history and graph log in the terminal.
 - Cherry-pick a commit selected from recent log entries.
-- IntelliJ-like Git Log GUI with searchable branch tree, colored graph lanes, changed-file tree, and file patch preview.
+- GI Pro Git Log GUI with searchable branch tree, colored graph lanes, changed-file tree, and file patch preview.
 
 ## Development
 
@@ -23,9 +23,9 @@ npm run compile
 
 Open this folder in VS Code and press `F5` to launch an Extension Development Host.
 
-Use the Command Palette and search for `IntelliJ Git`.
+Use the Command Palette and search for `GI Pro`.
 
-Open `IntelliJ Git: Git: Open IntelliJ-like Log View` to use the GUI log view.
+Open `GI Pro: Git: Open GI Pro Log View` to use the GUI log view.
 
 - Search branches from the left sidebar.
 - Click a branch to filter commits.

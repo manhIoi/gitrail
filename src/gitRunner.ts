@@ -60,8 +60,8 @@ export class GitRunner {
       return this.terminal;
     }
 
-    const config = vscode.workspace.getConfiguration('intellijGit');
-    const name = config.get<string>('terminalName', 'IntelliJ Git');
+    const config = vscode.workspace.getConfiguration('giPro');
+    const name = config.get<string>('terminalName', 'GI Pro');
     this.terminal = vscode.window.createTerminal({
       name,
       cwd: root.fsPath

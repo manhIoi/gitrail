@@ -1,7 +1,7 @@
 {
-  "name": "intellij-git-actions",
-  "displayName": "GI pro",
-  "description": "VS Code extension with IntelliJ-like Git commands and quick workflows.",
+  "name": "gi-pro",
+  "displayName": "GI Pro",
+  "description": "VS Code extension with GI Pro Git commands and quick workflows.",
   "version": "0.0.1",
   "publisher": "local",
   "engines": {
@@ -12,171 +12,236 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:intellijGit.smartCommit",
-    "onCommand:intellijGit.fetch",
-    "onCommand:intellijGit.pullRebase",
-    "onCommand:intellijGit.push",
-    "onCommand:intellijGit.forcePushLease",
-    "onCommand:intellijGit.amendNoEdit",
-    "onCommand:intellijGit.interactiveRebase",
-    "onCommand:intellijGit.stash",
-    "onCommand:intellijGit.stashPop",
-    "onCommand:intellijGit.checkoutBranch",
-    "onCommand:intellijGit.compareFileWithHead",
-    "onCommand:intellijGit.showFileHistory",
-    "onCommand:intellijGit.showLogGraph",
-    "onCommand:intellijGit.openGitLogView",
-    "onCommand:intellijGit.cherryPick",
-    "onView:intellijGit.logView"
+    "onCommand:giPro.smartCommit",
+    "onCommand:giPro.fetch",
+    "onCommand:giPro.pullRebase",
+    "onCommand:giPro.push",
+    "onCommand:giPro.forcePushLease",
+    "onCommand:giPro.amendNoEdit",
+    "onCommand:giPro.interactiveRebase",
+    "onCommand:giPro.abortGitOperation",
+    "onCommand:giPro.stash",
+    "onCommand:giPro.stashPop",
+    "onCommand:giPro.checkoutBranch",
+    "onCommand:giPro.branches",
+    "onCommand:giPro.compareFileWithHead",
+    "onCommand:giPro.showFileHistory",
+    "onCommand:giPro.showLogGraph",
+    "onCommand:giPro.openGitLogView",
+    "onCommand:giPro.cherryPick",
+    "onView:giPro.logView",
+    "onView:giPro.branchDiffView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "intellijGit.smartCommit",
+        "command": "giPro.smartCommit",
         "title": "Smart Commit",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.fetch",
+        "command": "giPro.fetch",
         "title": "Fetch All",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.pullRebase",
+        "command": "giPro.pullRebase",
         "title": "Pull with Rebase",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.push",
+        "command": "giPro.push",
         "title": "Push",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.forcePushLease",
+        "command": "giPro.forcePushLease",
         "title": "Force Push with Lease",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.amendNoEdit",
+        "command": "giPro.amendNoEdit",
         "title": "Amend Commit Without Editing Message",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.interactiveRebase",
+        "command": "giPro.interactiveRebase",
         "title": "Interactive Rebase",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.stash",
+        "command": "giPro.abortGitOperation",
+        "title": "Abort",
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.stash",
         "title": "Stash Changes",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.stashPop",
+        "command": "giPro.stashPop",
         "title": "Pop Stash",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.checkoutBranch",
+        "command": "giPro.checkoutBranch",
         "title": "Checkout Branch",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.compareFileWithHead",
+        "command": "giPro.branches",
+        "title": "Branches",
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.compareFileWithHead",
         "title": "Compare File with HEAD",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.showFileHistory",
+        "command": "giPro.showFileHistory",
         "title": "Show File History",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.showLogGraph",
+        "command": "giPro.showLogGraph",
         "title": "Show Log Graph",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.openGitLogView",
+        "command": "giPro.openGitLogView",
         "title": "Open Log View",
-        "category": "GI pro"
+        "category": "GI Pro"
       },
       {
-        "command": "intellijGit.cherryPick",
+        "command": "giPro.cherryPick",
         "title": "Cherry-pick Commit",
-        "category": "GI pro"
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.branchDiff.refresh",
+        "title": "Refresh",
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.branchDiff.getAll",
+        "title": "Get All",
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.branchDiff.getFile",
+        "title": "Get",
+        "category": "GI Pro"
+      },
+      {
+        "command": "giPro.branchDiff.openFile",
+        "title": "Open Diff",
+        "category": "GI Pro"
       }
     ],
     "viewsContainers": {
       "panel": [
         {
-          "id": "intellijGitPanel",
-          "title": "GI pro",
+          "id": "giProPanel",
+          "title": "GI Pro",
           "icon": "media/git-log.svg"
         }
       ]
     },
     "views": {
-      "intellijGitPanel": [
+      "giProPanel": [
         {
-          "id": "intellijGit.logView",
+          "id": "giPro.logView",
           "name": "Log",
           "type": "webview"
+        }
+      ],
+      "scm": [
+        {
+          "id": "giPro.branchDiffView",
+          "name": "GI Pro Diff"
         }
       ]
     },
     "menus": {
       "editor/context": [
         {
-          "command": "intellijGit.compareFileWithHead",
+          "command": "giPro.compareFileWithHead",
           "group": "navigation@50",
           "when": "resourceScheme == file"
         },
         {
-          "command": "intellijGit.showFileHistory",
+          "command": "giPro.showFileHistory",
           "group": "navigation@51",
           "when": "resourceScheme == file"
         }
       ],
       "scm/title": [
         {
-          "command": "intellijGit.smartCommit",
-          "group": "navigation@1"
+          "command": "giPro.abortGitOperation",
+          "group": "navigation@1",
+          "when": "giPro.abortAvailable"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "giPro.branchDiff.refresh",
+          "group": "navigation@1",
+          "when": "view == giPro.branchDiffView"
         },
         {
-          "command": "intellijGit.openGitLogView",
-          "group": "navigation@2"
+          "command": "giPro.branchDiff.getAll",
+          "group": "navigation@2",
+          "when": "view == giPro.branchDiffView && giPro.branchDiffAvailable"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "giPro.branchDiff.getFile",
+          "group": "inline@1",
+          "when": "view == giPro.branchDiffView && viewItem == giProBranchDiffFile"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "giPro.branchDiff.refresh",
+          "when": "false"
         },
         {
-          "command": "intellijGit.pullRebase",
-          "group": "navigation@3"
+          "command": "giPro.branchDiff.getAll",
+          "when": "false"
         },
         {
-          "command": "intellijGit.push",
-          "group": "navigation@4"
+          "command": "giPro.branchDiff.getFile",
+          "when": "false"
+        },
+        {
+          "command": "giPro.branchDiff.openFile",
+          "when": "false"
         }
       ]
     },
     "configuration": {
-      "title": "GI pro",
+      "title": "GI Pro",
       "properties": {
-        "intellijGit.terminalName": {
+        "giPro.terminalName": {
           "type": "string",
-          "default": "IntelliJ Git",
+          "default": "GI Pro",
           "description": "Terminal name used to run Git commands."
         },
-        "intellijGit.smartCommitPushAfterCommit": {
+        "giPro.smartCommitPushAfterCommit": {
           "type": "boolean",
           "default": false,
           "description": "Ask whether to push after a smart commit."
         },
-        "intellijGit.inlineBlame.enabled": {
+        "giPro.inlineBlame.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show inline Git blame on the active cursor line."
         },
-        "intellijGit.inlineBlame.delayMs": {
+        "giPro.inlineBlame.delayMs": {
           "type": "number",
           "default": 50,
           "minimum": 0,

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A VS Code extension that replicates IntelliJ IDEA-style Git workflows. It ships 15 commands under the `IntelliJ Git` category and a full-screen webview Git Log panel.
+A VS Code extension that replicates GI Pro Git workflows. It ships 15 commands under the `GI Pro` category and a full-screen webview Git Log panel.
 
 ## Commands
 
@@ -25,7 +25,7 @@ Three source files in `src/`:
 |------|------|
 | `extension.ts` | Entry point. Registers all 15 commands. Each command calls helpers that use `GitRunner`. |
 | `gitRunner.ts` | `GitRunner` class — two modes: `run()` sends a command to a persistent VS Code terminal; `exec()` runs a command with `child_process.exec` and returns stdout. Also exports `shellQuote()`. |
-| `gitLogView.ts` | Singleton webview panel (`intellijGitLog`). `GitLogController` loads state (branches, commits, commit detail + patch) and renders everything as a single self-contained HTML string with embedded CSS and JS. |
+| `gitLogView.ts` | Singleton webview panel (`giProLog`). `GitLogController` loads state (branches, commits, commit detail + patch) and renders everything as a single self-contained HTML string with embedded CSS and JS. |
 
 ### Key design decisions
 
