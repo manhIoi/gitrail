@@ -10,3 +10,4 @@ node_modules/**
 dist/**/*.map
 media/icon.svg
 media/icon-source.png
+media/publisher-logo.png
