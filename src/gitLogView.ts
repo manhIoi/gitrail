@@ -2463,6 +2463,19 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          state.selectedBranch = node.dataset.branch;
 	          send({ type: 'selectBranch', branch: node.dataset.branch });
 	        });
+	        node.addEventListener('dblclick', () => {
+	          const branch = node.dataset.branch;
+	          if (!branch) return;
+	          // Double-click filters the log to this branch; again on the same branch clears it.
+	          const alreadyOnly = commitFilters.branches.size === 1 && commitFilters.branches.has(branch);
+	          commitFilters.branches = alreadyOnly ? new Set() : new Set([branch]);
+	          persistViewState();
+	          document.querySelectorAll('[data-filter-option="branches"]').forEach((input) => {
+	            input.checked = commitFilters.branches.has(input.value);
+	          });
+	          updateCommitFilterIndicators();
+	          applyCommitFilters();
+	        });
 		        node.addEventListener('contextmenu', (event) => openBranchContextMenu(event, node));
 	      });
 	      wireCommitRows();

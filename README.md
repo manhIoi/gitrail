@@ -12,6 +12,32 @@ GI Pro brings fast Git workflows into VS Code: a visual log view, file history, 
 - Quick Git actions for fetch, pull with rebase, push, force push with lease, stash, branch checkout, interactive rebase, and cherry-pick.
 - Branch diff view in the Source Control sidebar.
 
+## Preview
+
+### Visual Git Log
+
+Browse branches, search commits, inspect the graph, and review changed files from one panel.
+
+![GI Pro visual Git Log view](media/readme/log-view.png)
+
+### Working Tree Diff
+
+Compare a branch with your working tree and get individual files or all changes from the selected branch.
+
+![GI Pro working tree diff view](media/readme/working-tree-diff.png)
+
+### History for Selection
+
+Select lines in a tracked file and see the commits that touched that exact range.
+
+![GI Pro history for selected lines](media/readme/selection-history.png)
+
+### Inline Blame
+
+See author and commit information for the active line without leaving the editor.
+
+![GI Pro inline blame](media/readme/inline-blame.png)
+
 ## Requirements
 
 - VS Code 1.92.0 or newer.

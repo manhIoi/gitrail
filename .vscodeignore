@@ -8,3 +8,5 @@ node_modules/**
 *.log
 *.vsix
 dist/**/*.map
+media/icon.svg
+media/icon-source.png
