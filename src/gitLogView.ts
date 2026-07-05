@@ -20,8 +20,6 @@ type Commit = {
   shortHash: string;
   parents: string[];
   branches: string[];
-  graph: string;
-  postLines: string[];
   subject: string;
   author: string;
   date: string;
@@ -444,10 +442,6 @@ class GitLogController {
 
       if (message.type === 'selectBranch') {
         this.selectedBranch = message.branch || undefined;
-        this.selectedCommit = undefined;
-        this.diffBranch = undefined;
-        this.selectedDiffFile = undefined;
-        await this.render();
         return;
       }
 
@@ -455,7 +449,8 @@ class GitLogController {
         this.selectedCommit = message.hash;
         this.diffBranch = undefined;
         this.selectedDiffFile = undefined;
-        await this.render();
+        const detail = await this.loadCommitDetail(message.hash);
+        await this.webview.postMessage({ type: 'commitDetail', detail });
         return;
       }
 
@@ -927,33 +922,22 @@ class GitLogController {
   }
 
   private selectVisibleCommit(commits: Commit[]): string | undefined {
+    // Nothing is selected until the user clicks a commit.
     if (this.selectedCommit && commits.some((commit) => commit.hash === this.selectedCommit)) {
       return this.selectedCommit;
     }
-
-    if (this.selectedBranch) {
-      const branchCommit = commits.find((commit) => commit.branches.includes(this.selectedBranch!));
-      if (branchCommit) {
-        return branchCommit.hash;
-      }
-    }
-
-    return commits[0]?.hash;
+    return undefined;
   }
 
   private async loadCommits(branches: Branch[]): Promise<Commit[]> {
     const target = '--all --exclude=refs/stash';
     const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
-    const raw = await this.git.exec(`git log --graph --date-order --decorate --date=iso-strict --pretty=format:${shellQuote(format)} -n 300 ${target}`);
+    const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n 300 ${target}`);
 
     const commits: Commit[] = [];
-    for (const line of raw.split(/\r?\n/).map((l) => l.trimEnd())) {
-      if (line.includes('\x1f')) {
-        const commit = parseCommitLine(line);
-        if (commit) commits.push(commit);
-      } else if (line && commits.length > 0) {
-        commits[commits.length - 1].postLines.push(line);
-      }
+    for (const line of raw.split(/\r?\n/)) {
+      const commit = parseCommitLine(line);
+      if (commit) commits.push(commit);
     }
     await this.assignCommitBranches(commits, branches);
     return commits;
@@ -1008,7 +992,6 @@ function parseCommitLine(line: string): Commit | undefined {
     return undefined;
   }
 
-  const graph = line.slice(0, marker).trimEnd();
   const [hash, parents, author, date, refs, subject] = line.slice(marker + 1).split('\x1f');
   if (!isCommitHash(hash)) {
     return undefined;
@@ -1019,8 +1002,6 @@ function parseCommitLine(line: string): Commit | undefined {
     shortHash: hash.slice(0, 8),
     parents: parents ? parents.split(' ').filter(Boolean) : [],
     branches: [],
-    graph,
-    postLines: [],
     subject,
     author,
     date,
@@ -1083,6 +1064,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       --toolbar-bg: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background, #181a20));
       --search-bg: var(--vscode-input-background, #101116);
       --hover-bg: var(--vscode-list-hoverBackground, #2f3b5e);
+      --selected-bg: var(--vscode-list-activeSelectionBackground, #04568c);
+      --selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
       --context-bg: var(--vscode-menu-background, var(--vscode-editor-background, #242630));
       --context-border: var(--vscode-menu-border, var(--vscode-panel-border, #4a5060));
       --context-hover: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #3a4771));
@@ -1117,6 +1100,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      /* VS Code's default webview stylesheet adds "padding: 0 20px". */
+      padding: 0;
       background: var(--bg);
       color: var(--text);
       font-family: var(--vscode-font-family);
@@ -1199,8 +1184,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       flex: 0 0 30px;
       display: grid;
       place-items: center;
-      color: var(--text);
-      font-size: 18px;
+      color: var(--muted);
+    }
+    .commit-search-icon svg {
+      display: block;
     }
     .commit-search {
       min-width: 0;
@@ -1299,7 +1286,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       height: 6px;
       border-right: 2px solid currentColor;
       border-bottom: 2px solid currentColor;
-      transform: translate(-50%, -50%) rotate(45deg);
+      transform: translate(-50%, -68%) rotate(45deg);
       transform-origin: center;
     }
     .filter-clear {
@@ -1369,9 +1356,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
     .icon-button {
       width: 28px;
       height: 28px;
+      flex: 0 0 28px;
       display: grid;
       place-items: center;
       color: var(--text);
@@ -1380,18 +1371,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       border-radius: 4px;
       cursor: pointer;
     }
-    .icon-button:hover, .text-button:hover {
+    .icon-button:hover {
       background: var(--panel-2);
       border-color: var(--border);
     }
-    .text-button {
-      color: var(--text);
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 5px 8px;
-      cursor: pointer;
-      white-space: nowrap;
+    .icon-button svg {
+      display: block;
     }
     .section-title {
       padding: 12px 14px 6px;
@@ -1414,8 +1399,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       cursor: pointer;
       color: var(--text);
     }
-    .tree-row:hover, .tree-row.active, .branch:hover, .branch.active, .commit-row:hover, .commit-row.active, .file-row:hover, .file-row.active {
+    .tree-row:hover, .branch:hover, .commit-row:hover, .file-row:hover {
       background: var(--hover-bg);
+    }
+    .tree-row.active, .branch.active, .commit-row.active, .file-row.active,
+    .tree-row.active:hover, .branch.active:hover, .commit-row.active:hover, .file-row.active:hover {
+      background: var(--selected-bg);
+      color: var(--selected-fg);
+    }
+    .commit-row.active .subject, .commit-row.active .author, .commit-row.active .date,
+    .branch.active .tree-name, .file-row.active .tree-name {
+      color: var(--selected-fg);
+    }
+    .commit-row.active.is-merge .subject {
+      color: var(--selected-fg);
+      opacity: 0.85;
     }
     .tree-row.folder {
       color: var(--folder-fg);
@@ -1461,8 +1459,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .context-menu-icon {
       width: 18px;
-      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       color: var(--branch-icon);
+    }
+    .context-menu-icon svg {
+      display: block;
     }
     .context-menu-label {
       min-width: 0;
@@ -1493,9 +1496,16 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .tree-icon {
       width: 16px;
+      height: 16px;
       flex: 0 0 16px;
-      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
       color: var(--muted);
+    }
+    .tree-icon svg {
+      display: block;
     }
     .tree-chevron {
       width: 14px;
@@ -1517,11 +1527,11 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       height: 6px;
       border-right: 2px solid currentColor;
       border-bottom: 2px solid currentColor;
-      transform: translate(-50%, -50%) rotate(45deg);
+      transform: translate(-50%, -70%) rotate(45deg);
       transform-origin: center;
     }
     .tree-row[data-collapsed="true"] > .tree-chevron::before {
-      transform: translate(-50%, -50%) rotate(-45deg);
+      transform: translate(-70%, -50%) rotate(-45deg);
     }
     .branch > .tree-chevron::before,
     .file > .tree-chevron::before {
@@ -1599,83 +1609,74 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .commit-row {
       display: grid;
-      grid-template-columns: 170px minmax(100px, 1fr) 150px 120px;
+      grid-template-columns: var(--graph-col, 48px) minmax(100px, 1fr) 150px 120px;
       gap: 8px;
-      height: 22px;
+      height: 24px;
       align-items: center;
       padding: 0 10px 0 0;
       cursor: pointer;
       border-bottom: 1px solid var(--row-border);
       overflow: hidden;
     }
-    .graph-row {
-      display: grid;
-      grid-template-columns: 170px minmax(100px, 1fr) 150px 120px;
-      gap: 8px;
-      height: 10px;
-      padding: 0 10px 0 0;
-      overflow: hidden;
-    }
-    .graph-row.angled {
-      height: 10px;
-    }
-    .graph {
-      width: 170px;
-      height: 22px;
-      font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
-      font-size: 15px;
-      line-height: 22px;
-      white-space: pre;
-      color: var(--muted);
-      overflow: hidden;
-    }
     .graph-layer {
       position: absolute;
-      inset: 0 auto auto 0;
-      width: 170px;
+      top: 0;
+      left: 0;
       pointer-events: none;
       z-index: 2;
       overflow: hidden;
     }
     .graph-layer svg {
       display: block;
-      width: 170px;
     }
-    .graph-line {
+    .graph-edge {
       fill: none;
-      stroke-width: 1.8;
+      stroke-width: 2;
       stroke-linecap: round;
-      stroke-linejoin: round;
-      opacity: 0.95;
     }
     .graph-dot {
-      stroke: var(--dot-stroke);
+      stroke-width: 0;
+    }
+    .graph-dot.merge {
+      fill: var(--bg);
       stroke-width: 2;
     }
-    .graph-char {
-      display: inline-flex;
-      width: 9px;
-      height: 22px;
-      align-items: center;
-      justify-content: center;
-      vertical-align: top;
+    :root {
+      --gc-0: #f9c74f;
+      --gc-1: #4fc1e9;
+      --gc-2: #f06292;
+      --gc-3: #7bd88f;
+      --gc-4: #b48ead;
+      --gc-5: #ffa657;
+      --gc-6: #64b5f6;
+      --gc-7: #26a69a;
     }
-    .graph-node {
-      display: contents;
+    body.vscode-light {
+      --gc-0: #b8860b;
+      --gc-1: #0277bd;
+      --gc-2: #c2185b;
+      --gc-3: #2e7d32;
+      --gc-4: #6a1b9a;
+      --gc-5: #e65100;
+      --gc-6: #1565c0;
+      --gc-7: #00695c;
     }
-    .graph-row .graph,
-    .graph-row .graph-char {
-      height: 10px;
-      line-height: 10px;
-    }
-    .lane-0 { color: #8f9b3a; }
-    .lane-1 { color: #bd5165; }
-    .lane-2 { color: #4fa06f; }
-    .lane-3 { color: #8b54c4; }
-    .lane-4 { color: #b88445; }
-    .lane-5 { color: #54a0a8; }
-    .lane-6 { color: #4f6fc7; }
-    .lane-7 { color: #d0a13d; }
+    .ge-0 { stroke: var(--gc-0); }
+    .ge-1 { stroke: var(--gc-1); }
+    .ge-2 { stroke: var(--gc-2); }
+    .ge-3 { stroke: var(--gc-3); }
+    .ge-4 { stroke: var(--gc-4); }
+    .ge-5 { stroke: var(--gc-5); }
+    .ge-6 { stroke: var(--gc-6); }
+    .ge-7 { stroke: var(--gc-7); }
+    .gd-0 { fill: var(--gc-0); stroke: var(--gc-0); }
+    .gd-1 { fill: var(--gc-1); stroke: var(--gc-1); }
+    .gd-2 { fill: var(--gc-2); stroke: var(--gc-2); }
+    .gd-3 { fill: var(--gc-3); stroke: var(--gc-3); }
+    .gd-4 { fill: var(--gc-4); stroke: var(--gc-4); }
+    .gd-5 { fill: var(--gc-5); stroke: var(--gc-5); }
+    .gd-6 { fill: var(--gc-6); stroke: var(--gc-6); }
+    .gd-7 { fill: var(--gc-7); stroke: var(--gc-7); }
     .subject {
       min-width: 0;
       overflow: hidden;
@@ -1828,8 +1829,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       .app {
         grid-template-columns: var(--sidebar-width, 220px) 6px minmax(320px, 1fr) 6px var(--detail-width, 340px);
       }
-      .commit-row { grid-template-columns: 150px minmax(100px, 1fr) 130px 100px; }
-      .graph, .graph-layer, .graph-layer svg { width: 150px; }
+      .commit-row { grid-template-columns: var(--graph-col, 48px) minmax(100px, 1fr) 130px 100px; }
     }
   </style>
 </head>
@@ -1994,7 +1994,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    function renderCommitToolbar() {
 	      return '<div class="toolbar commit-toolbar">' +
 	        '<div class="commit-search-wrap">' +
-	          '<span class="commit-search-icon">⌕</span>' +
+	          '<span class="commit-search-icon">' + searchIcon() + '</span>' +
 	          '<input id="commitSearch" class="commit-search" placeholder="Filter by commit message or hash">' +
 	          '<button id="commitSearchClear" class="clear-button" type="button" title="Clear filter" hidden>×</button>' +
 	          '<button class="filter-toggle" type="button" title="Match case" data-filter-flag="matchCase">Aa</button>' +
@@ -2002,9 +2002,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        '</div>' +
 	        renderFilterDropdown('branches', 'Branch', branchFilterOptions(), commitFilters.branches) +
 	        renderFilterDropdown('users', 'User', userFilterOptions(), commitFilters.users) +
-	        '<button class="icon-button" title="New Branch from selected commit" data-action="newBranch">' + branchIcon() + '</button>' +
-	        '<button class="icon-button" title="Refresh" data-action="refresh">↻</button>' +
+	        '<span class="toolbar-spacer"></span>' +
+	        '<button id="goToHead" class="icon-button" type="button" title="Go to branch head (selected branch or current)">' + targetIcon() + '</button>' +
 	        '</div>';
+	    }
+
+	    function searchIcon() {
+	      return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.9 9.9 13.4 13.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
 	    }
 
     function renderBranches() {
@@ -2050,9 +2054,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         }
 
         const branch = entry.branch;
-        const active = state.selectedBranch === branch.name || (!state.selectedBranch && branch.current);
-        const iconClass = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? 'tree-icon current-icon' : branchStatusClass(branch, 'tree');
-        const icon = branch.current || branch.displayName === 'main' || branch.displayName === 'master' ? '★' : branchIcon();
+        const active = state.selectedBranch === branch.name;
+        const isPrimary = branch.current || branch.displayName === 'main' || branch.displayName === 'master';
+        const iconClass = isPrimary ? 'tree-icon current-icon' : branchStatusClass(branch, 'tree');
+        const icon = isPrimary ? starIcon() : (branch.type === 'remote' ? remoteIcon() : branchIcon());
         const status = renderBranchStatus(branch);
         return '<div class="tree-row branch ' + treeLevel(depth) + ' ' + (active ? 'active' : '') + '" data-branch="' + html(branch.name) + '" data-branch-type="' + html(branch.type) + '" data-branch-current="' + String(Boolean(branch.current)) + '" data-depth="' + depth + '">' +
           '<span class="tree-chevron" aria-hidden="true"></span><span class="' + iconClass + '">' + icon + '</span><span class="tree-name">' + html(branch.displayName) + '</span>' + status +
@@ -2105,15 +2110,15 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       const current = currentBranch || 'current branch';
       const multi = hashes.length > 1;
       return [
-        { label: multi ? 'Copy Revision Numbers' : 'Copy Revision Number', action: 'copyRevisionNumber', icon: '⧉' },
-        { label: 'Create Patch...', action: 'createPatch', icon: '⌘' },
-        { label: 'Cherry-Pick', action: 'cherryPick', icon: '●' },
+        { label: multi ? 'Copy Revision Numbers' : 'Copy Revision Number', action: 'copyRevisionNumber', icon: copyIcon() },
+        { label: 'Create Patch...', action: 'createPatch', icon: fileIcon() },
+        { label: 'Cherry-Pick', action: 'cherryPick', icon: pickIcon() },
         { separator: true },
         { label: 'Checkout Revision', action: 'checkoutRevision', disabled: multi },
         { label: 'Show Repository at Revision', action: 'showRepositoryAtRevision', disabled: multi },
         { label: 'Compare with Local', action: 'compareWithLocal', disabled: multi },
         { separator: true },
-        { label: 'Reset Current Branch to Here...', action: 'resetCurrentBranchHere', icon: '↶', disabled: multi },
+        { label: 'Reset Current Branch to Here...', action: 'resetCurrentBranchHere', icon: undoIcon(), disabled: multi },
         { label: multi ? 'Revert Commits' : 'Revert Commit', action: 'revertCommit' },
         { label: 'Undo Commit...', action: 'undoCommit', disabled: true },
         { separator: true },
@@ -2126,119 +2131,162 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         { label: 'Push All up to Here...', action: 'pushAllUpToHere', disabled: multi },
         { separator: true },
         { label: "Rebase '" + current + "' onto Selected Commit", action: 'rebaseCurrentOnto', disabled: multi },
-        { label: 'New Branch...', action: 'newBranch', disabled: multi },
-        { label: 'New Tag...', action: 'newTag', disabled: multi },
+        { label: 'New Branch...', action: 'newBranch', icon: branchIcon(), disabled: multi },
+        { label: 'New Tag...', action: 'newTag', icon: tagIcon(), disabled: multi },
         { separator: true },
         { label: 'Go to Child Commit', action: 'goChild', clientAction: true, disabled: multi },
         { label: 'Go to Parent Commit', action: 'goParent', clientAction: true, disabled: multi }
       ];
     }
 
-    function renderAsciiGraph(graph) {
-      return html(graph || '*').split('').map((char, index) => {
-        const laneClass = 'lane-' + (Math.floor(index / 2) % 8);
-        return '<span class="graph-char ' + laneClass + '">' + (char === ' ' ? '&nbsp;' : char) + '</span>';
-      }).join('');
+    const GRAPH_ROW_H = 24;
+    const GRAPH_LANE_W = 12;
+    const GRAPH_PAD = 10;
+    const GRAPH_COLOR_COUNT = 8;
+
+    // Assigns each commit to a swim lane from hash/parent relationships (the
+    // same model VS Code's SCM graph and IntelliJ use), instead of re-parsing
+    // "git log --graph" ASCII art. Colors stick to a lane for the lifetime of
+    // its branch line.
+    function computeGraphLayout(commits) {
+      const visible = new Set(commits.map((commit) => commit.hash));
+      const lanes = []; // slot: { expected, colorIdx, branchedFrom? } | null
+      const nodes = [];
+      const edges = [];
+      let colorCounter = 0;
+      let maxLanes = 1;
+
+      commits.forEach((commit, row) => {
+        let commitLane = -1;
+        lanes.forEach((lane, index) => {
+          if (commitLane < 0 && lane && lane.expected === commit.hash) {
+            commitLane = index;
+          }
+        });
+
+        let colorIdx;
+        if (commitLane >= 0) {
+          colorIdx = lanes[commitLane].colorIdx;
+        } else {
+          commitLane = lanes.findIndex((lane) => !lane);
+          if (commitLane < 0) {
+            commitLane = lanes.length;
+            lanes.push(null);
+          }
+          colorIdx = colorCounter % GRAPH_COLOR_COUNT;
+          colorCounter += 1;
+        }
+
+        // Edges for the boundary between the previous row and this one.
+        if (row > 0) {
+          lanes.forEach((lane, index) => {
+            if (!lane) return;
+            const to = lane.expected === commit.hash ? commitLane : index;
+            const from = lane.branchedFrom !== undefined ? lane.branchedFrom : index;
+            edges.push({ row: row - 1, from, to, colorIdx: lane.colorIdx });
+            (lane.joins || []).forEach((joinFrom) => {
+              edges.push({ row: row - 1, from: joinFrom, to, colorIdx: lane.colorIdx });
+            });
+            delete lane.branchedFrom;
+            delete lane.joins;
+          });
+        }
+
+        // Lanes that merged into this commit (beyond the one it continues) end here.
+        lanes.forEach((lane, index) => {
+          if (lane && lane.expected === commit.hash && index !== commitLane) {
+            lanes[index] = null;
+          }
+        });
+
+        const parents = commit.parents.filter((parent) => visible.has(parent));
+        if (!parents.length) {
+          lanes[commitLane] = null;
+        } else {
+          lanes[commitLane] = { expected: parents[0], colorIdx };
+          parents.slice(1).forEach((parent) => {
+            const existing = lanes.findIndex((lane) => lane && lane.expected === parent);
+            if (existing >= 0) {
+              // The merge line joins a lane that already awaits this parent;
+              // emit its edge at the next boundary so it follows that lane's path.
+              lanes[existing].joins = (lanes[existing].joins || []).concat(commitLane);
+              return;
+            }
+            let slot = lanes.findIndex((lane) => !lane);
+            if (slot < 0) {
+              slot = lanes.length;
+              lanes.push(null);
+            }
+            lanes[slot] = { expected: parent, colorIdx: colorCounter % GRAPH_COLOR_COUNT, branchedFrom: commitLane };
+            colorCounter += 1;
+          });
+        }
+
+        while (lanes.length && !lanes[lanes.length - 1]) {
+          lanes.pop();
+        }
+        maxLanes = Math.max(maxLanes, lanes.length, commitLane + 1);
+        nodes.push({ lane: commitLane, colorIdx, merge: commit.parents.length > 1 });
+      });
+
+      return { nodes, edges, maxLanes };
+    }
+
+    function graphX(lane) {
+      return GRAPH_PAD + lane * GRAPH_LANE_W;
+    }
+
+    function renderGraphSvg(commits, layout) {
+      const width = Math.min(260, GRAPH_PAD * 2 + Math.max(0, layout.maxLanes - 1) * GRAPH_LANE_W + 8);
+      const height = commits.length * GRAPH_ROW_H;
+      const half = GRAPH_ROW_H / 2;
+      const pieces = [];
+
+      layout.edges.forEach((edge) => {
+        const y1 = edge.row * GRAPH_ROW_H + half;
+        const y2 = y1 + GRAPH_ROW_H;
+        const x1 = graphX(edge.from);
+        const x2 = graphX(edge.to);
+        const cls = 'graph-edge ge-' + edge.colorIdx;
+        if (x1 === x2) {
+          pieces.push('<path class="' + cls + '" d="M' + x1 + ' ' + y1 + ' V' + y2 + '"/>');
+        } else {
+          const c1 = y1 + GRAPH_ROW_H * 0.5;
+          const c2 = y2 - GRAPH_ROW_H * 0.5;
+          pieces.push('<path class="' + cls + '" d="M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + c1 + ', ' + x2 + ' ' + c2 + ', ' + x2 + ' ' + y2 + '"/>');
+        }
+      });
+
+      layout.nodes.forEach((node, row) => {
+        const cy = row * GRAPH_ROW_H + half;
+        const cls = 'graph-dot gd-' + node.colorIdx + (node.merge ? ' merge' : '');
+        pieces.push('<circle class="' + cls + '" cx="' + graphX(node.lane) + '" cy="' + cy + '" r="' + (node.merge ? 3 : 4) + '"/>');
+      });
+
+      return {
+        width,
+        html: '<div class="graph-layer"><svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" aria-hidden="true">' + pieces.join('') + '</svg></div>'
+      };
     }
 
 	    function renderCommits(commits = state.commits) {
-	      if (state.error) return '<div class="error">' + html(state.error) + '</div>';
-	      if (!commits.length) return '<div class="empty">No commits found</div>';
+	      if (state.error) return { html: '<div class="error">' + html(state.error) + '</div>', graphWidth: 48 };
+	      if (!commits.length) return { html: '<div class="empty">No commits found</div>', graphWidth: 48 };
+	      const layout = computeGraphLayout(commits);
+	      const graph = renderGraphSvg(commits, layout);
 	      let rows = '';
 	      commits.forEach((commit) => {
 	        const active = selectedCommitHashes.has(commit.hash);
 	        const isMerge = commit.parents.length > 1;
 	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '">' +
-          '<div class="graph">' + renderAsciiGraph(commit.graph) + '</div>' +
+          '<div class="graph-cell"></div>' +
           '<div class="subject">' + html(commit.subject) + refLabels(commit.refs) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
           '<div class="date">' + html(formatDate(commit.date)) + '</div>' +
 	        '</div>';
-          commit.postLines.forEach((line) => {
-            rows += '<div class="graph-row angled"><div class="graph">' + renderAsciiGraph(line) + '</div><div></div><div></div><div></div></div>';
-          });
 	      });
-	      return rows;
+	      return { html: graph.html + rows, graphWidth: graph.width };
 	    }
-
-    function renderGraphLayer(commits) {
-      if (!commits.length) {
-        return '';
-      }
-
-      const colors = ['#9aa640', '#c34f65', '#4fa06f', '#9446ad', '#b88445', '#54a0a8', '#4f6fc7', '#d0a13d'];
-      const commitRowH = 22;
-      const width = 170;
-      const graphRows = [];
-      commits.forEach((commit, index) => {
-        const commitY = index * commitRowH + commitRowH / 2;
-        graphRows.push({ graph: commit.graph || '*', commit, y: commitY });
-
-        const nextY = (index + 1) * commitRowH + commitRowH / 2;
-        const postLines = commit.postLines || [];
-        postLines.forEach((line, lineIndex) => {
-          graphRows.push({
-            graph: line,
-            y: commitY + ((lineIndex + 1) * (nextY - commitY)) / (postLines.length + 1)
-          });
-        });
-      });
-      const height = commits.length * commitRowH;
-      const pieces = [];
-      const graphWidth = Math.max(1, ...graphRows.map((row) => row.graph.length));
-      const charWidth = Math.max(7, Math.min(11, Math.floor((width - 24) / graphWidth)));
-      const xAt = (charIndex) => 12 + charIndex * charWidth;
-      const colorAt = (charIndex) => colors[Math.floor(charIndex / 2) % colors.length];
-      const path = (d, color) => {
-        pieces.push('<path class="graph-line" d="' + d + '" stroke="' + color + '"/>');
-      };
-
-      graphRows.forEach((graphRow, row) => {
-        const graph = graphRow.graph;
-        const y = graphRow.y;
-        const previousY = graphRows[row - 1]?.y ?? Math.max(0, y - commitRowH / 2);
-        const nextY = graphRows[row + 1]?.y ?? Math.min(height, y + commitRowH / 2);
-        const renderTop = (previousY + y) / 2;
-        const renderBottom = (nextY + y) / 2;
-
-        for (let index = 0; index < graph.length; index++) {
-          const char = graph[index];
-          const x = xAt(index);
-          const color = colorAt(index);
-
-          if (char === '|') {
-            path('M' + x + ' ' + renderTop + ' L' + x + ' ' + renderBottom, color);
-          } else if (char === '*') {
-            const previousGraph = graphRows[row - 1]?.graph || '';
-            const nextGraph = graphRows[row + 1]?.graph || '';
-            const connectsUp = previousGraph[index] === '|' || previousGraph[index] === '*' || previousGraph.charCodeAt(index) === 92 || previousGraph[index] === '/';
-            const connectsDown = nextGraph[index] === '|' || nextGraph[index] === '*' || nextGraph.charCodeAt(index) === 92 || nextGraph[index] === '/';
-            if (connectsUp || connectsDown) {
-              path(
-                'M' + x + ' ' + (connectsUp ? renderTop : y) + ' L' + x + ' ' + (connectsDown ? renderBottom : y),
-                color
-              );
-            }
-          } else if (char === '/') {
-            path('M' + xAt(Math.max(0, index - 1)) + ' ' + renderBottom + ' L' + xAt(index + 1) + ' ' + renderTop, color);
-          } else if (char.charCodeAt(0) === 92) {
-            path('M' + xAt(Math.max(0, index - 1)) + ' ' + renderTop + ' L' + xAt(index + 1) + ' ' + renderBottom, color);
-          } else if (char === '-' || char === '_') {
-            path('M' + xAt(Math.max(0, index - 1)) + ' ' + y + ' L' + xAt(index + 1) + ' ' + y, color);
-          }
-        }
-      });
-
-      graphRows.forEach((graphRow, row) => {
-        if (!graphRow.commit) {
-          return;
-        }
-        const dotIndex = Math.max(0, graphRow.graph.indexOf('*'));
-        pieces.push('<circle class="graph-dot" cx="' + xAt(dotIndex) + '" cy="' + graphRow.y + '" r="5" fill="' + colorAt(dotIndex) + '"/>');
-      });
-
-      return '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" overflow="hidden" aria-hidden="true">' + pieces.join('') + '</svg>';
-    }
 
     function renderDetail() {
       if (state.branchDiff) return renderBranchDiff();
@@ -2307,19 +2355,53 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       return 'tree-level-' + Math.min(depth, 10);
     }
 
+    function svgIcon(inner, size) {
+      const s = size || 16;
+      return '<svg viewBox="0 0 16 16" width="' + s + '" height="' + s + '" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+    }
+
     function folderIcon() {
-      return '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M1.5 4.2c0-.7.5-1.2 1.2-1.2h3.5l1.3 1.4h5.8c.7 0 1.2.5 1.2 1.2v6.2c0 .7-.5 1.2-1.2 1.2H2.7c-.7 0-1.2-.5-1.2-1.2V4.2z"/></svg>';
+      return svgIcon('<path d="M1.75 12.75v-9h4.1l1.5 1.5h6.9v7.5z"/>');
     }
 
     function branchIcon() {
-      return '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M5 3v7.2A2.8 2.8 0 0 0 7.8 13H11"/><circle cx="5" cy="3" r="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="13" r="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="1.8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+      return svgIcon('<circle cx="4.75" cy="3.75" r="1.6"/><circle cx="4.75" cy="12.25" r="1.6"/><circle cx="11.25" cy="5.75" r="1.6"/><path d="M4.75 5.45v5.2M11.25 7.45c0 2.3-2.5 2.8-4.8 3"/>');
+    }
+
+    function remoteIcon() {
+      return svgIcon('<circle cx="8" cy="8" r="5.6"/><path d="M2.4 8h11.2M8 2.4c1.9 1.7 1.9 9.5 0 11.2M8 2.4c-1.9 1.7-1.9 9.5 0 11.2"/>');
+    }
+
+    function starIcon() {
+      return svgIcon('<path fill="currentColor" stroke="none" d="M8 1.9l1.85 3.75 4.15.6-3 2.93.71 4.12L8 11.35l-3.71 1.95.71-4.12-3-2.93 4.15-.6z"/>');
     }
 
     function tagIcon() {
-      return '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M2.5 2.5h5.4c.3 0 .6.1.8.3l5 5c.4.4.4 1 0 1.4l-4.5 4.5c-.4.4-1 .4-1.4 0l-5-5a1 1 0 0 1-.3-.8V2.5z"/><circle cx="5.4" cy="5.4" r="1.1" style="fill: var(--bg)"/></svg>';
+      return svgIcon('<path d="M2.75 2.75h4.9l5.6 5.6-4.9 4.9-5.6-5.6z"/><circle cx="5.9" cy="5.9" r="1.1" fill="currentColor" stroke="none"/>');
+    }
+
+    function targetIcon() {
+      return svgIcon('<circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/><path d="M8 1.2v2M8 12.8v2M1.2 8h2M12.8 8h2"/>');
+    }
+
+    function copyIcon() {
+      return svgIcon('<rect x="5.25" y="5.25" width="8" height="8" rx="1"/><path d="M10.75 3.25h-7.5v7.5"/>', 14);
+    }
+
+    function fileIcon() {
+      return svgIcon('<path d="M4.25 1.75h5l3 3v9.5h-8z"/><path d="M9.25 1.75v3h3"/>', 14);
+    }
+
+    function pickIcon() {
+      return svgIcon('<circle cx="8" cy="8" r="5.6" stroke-dasharray="2.4 2.2"/><circle cx="8" cy="8" r="2.1" fill="currentColor" stroke="none"/>', 14);
+    }
+
+    function undoIcon() {
+      return svgIcon('<path d="M3.25 3.75v3.5h3.5"/><path d="M3.6 7.25a5 5 0 1 0 1.3-3.3"/>', 14);
     }
 
 	  function render() {
+	    const commitsView = renderCommits(filteredCommits());
 	    document.getElementById('root').innerHTML =
 	      '<main class="app" style="--sidebar-width: ' + paneSizes.sidebar + 'px; --detail-width: ' + paneSizes.detail + 'px;">' +
 		        '<aside class="sidebar">' +
@@ -2329,7 +2411,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		        '<div class="pane-resizer" data-resize-pane="sidebar" title="Resize branches"></div>' +
 		        '<section class="commits">' +
 		          renderCommitToolbar() +
-		          '<div id="commits" class="commit-list">' + renderCommits(filteredCommits()) + '</div>' +
+		          '<div id="commits" class="commit-list" style="--graph-col: ' + commitsView.graphWidth + 'px">' + commitsView.html + '</div>' +
 		        '</section>' +
 		        '<div class="pane-resizer" data-resize-pane="detail" title="Resize details"></div>' +
 	        '<aside class="detail">' + renderDetail() + '</aside>' +
@@ -2343,37 +2425,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    function wire() {
 	      document.querySelectorAll('[data-branch]').forEach((node) => {
 	        node.addEventListener('click', () => {
-	          commitFilters.branches = new Set(node.dataset.branch ? [node.dataset.branch] : []);
-	          persistViewState();
+	          document.querySelectorAll('[data-branch]').forEach((other) => other.classList.remove('active'));
+	          node.classList.add('active');
+	          state.selectedBranch = node.dataset.branch;
 	          send({ type: 'selectBranch', branch: node.dataset.branch });
 	        });
 		        node.addEventListener('contextmenu', (event) => openBranchContextMenu(event, node));
 	      });
 	      wireCommitRows();
-      document.querySelectorAll('[data-file]').forEach((node) => {
-        node.addEventListener('click', () => {
-          document.querySelectorAll('[data-file]').forEach((n) => n.classList.remove('active'));
-          node.classList.add('active');
-          if (node.dataset.fileMode === 'branchDiff') {
-            send({ type: 'openBranchDiffFile', file: node.dataset.file });
-          } else {
-            send({ type: 'openDiff', file: node.dataset.file });
-          }
-        });
-      });
-      document.querySelectorAll('[data-get-file]').forEach((node) => {
-        node.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          send({ type: 'getDiffFile', file: node.dataset.getFile });
-        });
-      });
-	      document.querySelectorAll('[data-branch-folder], [data-file-folder]').forEach((node) => {
+	      wireDetailPane();
+	      document.querySelectorAll('[data-branch-folder]').forEach((node) => {
 	        node.addEventListener('click', () => toggleFolder(node));
 	      });
 	      wirePaneResizers();
-		      wireActions();
 	      document.getElementById('branchSearch').addEventListener('input', (event) => filterBranches(event.target.value));
+	      document.getElementById('goToHead')?.addEventListener('click', goToBranchHead);
 	      wireCommitFilters();
 		      document.addEventListener('click', () => {
 		        closeBranchContextMenu();
@@ -2397,7 +2463,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		        closeCommitContextMenu();
 		        closeFilterDropdowns();
 		      });
-		      document.querySelectorAll('.branch-list, .commit-list, .file-list, .patch').forEach((node) => {
+		      document.querySelectorAll('.branch-list, .commit-list').forEach((node) => {
 		        node.addEventListener('scroll', () => {
 		          updateScrollState(node);
 		          closeBranchContextMenu();
@@ -2405,6 +2471,39 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		          closeFilterDropdowns();
 		        });
 		      });
+	    }
+
+	    function wireDetailPane() {
+	      document.querySelectorAll('[data-file]').forEach((node) => {
+	        node.addEventListener('click', () => {
+	          document.querySelectorAll('[data-file]').forEach((n) => n.classList.remove('active'));
+	          node.classList.add('active');
+	          if (node.dataset.fileMode === 'branchDiff') {
+	            send({ type: 'openBranchDiffFile', file: node.dataset.file });
+	          } else {
+	            send({ type: 'openDiff', file: node.dataset.file });
+	          }
+	        });
+	      });
+	      document.querySelectorAll('[data-get-file]').forEach((node) => {
+	        node.addEventListener('click', (event) => {
+	          event.preventDefault();
+	          event.stopPropagation();
+	          send({ type: 'getDiffFile', file: node.dataset.getFile });
+	        });
+	      });
+	      document.querySelectorAll('[data-file-folder]').forEach((node) => {
+	        node.addEventListener('click', () => toggleFolder(node));
+	      });
+	      document.querySelectorAll('.file-list').forEach((node) => {
+	        node.addEventListener('scroll', () => {
+	          updateScrollState(node);
+	          closeBranchContextMenu();
+	          closeCommitContextMenu();
+	          closeFilterDropdowns();
+	        });
+	      });
+	      wireActions();
 	    }
 
 	    function restoreScrollPositions() {
@@ -2483,13 +2582,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      document.querySelectorAll('[data-action]').forEach((node) => {
 		        node.addEventListener('click', () => {
 		          const action = node.dataset.action;
-		          if (action === 'refresh') send({ type: 'refresh' });
 		          if (action === 'getDiffAll') send({ type: 'getDiffAll' });
 		          if (action === 'closeBranchDiff') send({ type: 'closeBranchDiff' });
-		          if (action === 'newBranch') {
-		            const hash = lastSelectedCommitHash || Array.from(selectedCommitHashes)[0];
-		            send({ type: 'newBranch', hash });
-		          }
 		        });
 	      });
 	    }
@@ -2518,6 +2612,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          : clamp(startSize - delta, minSize, maxSize);
 	        paneSizes[pane] = nextSize;
 	        app.style.setProperty(pane === 'sidebar' ? '--sidebar-width' : '--detail-width', nextSize + 'px');
+	        // Persist as we drag: mouseup can land outside the webview and never fire.
+	        persistViewState();
 	      };
 
 	      const onUp = () => {
@@ -2681,7 +2777,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    function applyCommitFilters() {
 	      const list = document.getElementById('commits');
 	      if (!list) return;
-	      list.innerHTML = renderCommits(filteredCommits());
+	      const commitsView = renderCommits(filteredCommits());
+	      list.style.setProperty('--graph-col', commitsView.graphWidth + 'px');
+	      list.innerHTML = commitsView.html;
 	      wireCommitRows();
 	    }
 
@@ -2772,7 +2870,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		      menu.innerHTML = commitContextItems(hashes).map((item) => {
 		        if (item.separator) return '<div class="context-menu-separator" role="separator"></div>';
 		        return '<button class="context-menu-item" type="button" data-commit-action="' + html(item.action) + '" ' + (item.disabled ? 'disabled' : '') + ' title="' + html(item.label) + '">' +
-	          '<span class="context-menu-icon">' + html(item.icon || '') + '</span>' +
+	          '<span class="context-menu-icon">' + (item.icon || '') + '</span>' +
 	          '<span class="context-menu-label">' + html(item.label) + '</span>' +
 	          '<span class="context-menu-shortcut">' + html(item.shortcut || '') + '</span>' +
 	        '</button>';
@@ -2881,6 +2979,56 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         folder.style.display = hasVisibleChild ? '' : 'none';
       });
     }
+
+    function goToBranchHead() {
+      const branchName = state.selectedBranch || currentBranch;
+      if (!branchName) return;
+      const target = state.commits.find((commit) => (commit.refs || []).some((ref) => refName(ref) === branchName));
+      if (!target) return;
+      if (!filteredCommits().some((commit) => commit.hash === target.hash)) {
+        clearAllCommitFilters();
+      }
+      const row = document.querySelector('[data-hash="' + target.hash + '"]');
+      const list = document.getElementById('commits');
+      if (!row || !list) return;
+      list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 2 + 12);
+      selectCommitRow(row, false);
+    }
+
+    function clearAllCommitFilters() {
+      commitFilters.query = '';
+      commitFilters.branches.clear();
+      commitFilters.users.clear();
+      const search = document.getElementById('commitSearch');
+      if (search) search.value = '';
+      document.querySelectorAll('[data-filter-option]').forEach((input) => {
+        input.checked = false;
+      });
+      persistViewState();
+      updateCommitSearchClear();
+      updateCommitFilterIndicators();
+      applyCommitFilters();
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event.data || {};
+      if (message.type === 'commitDetail' && message.detail) {
+        state.detail = message.detail;
+        state.branchDiff = null;
+        state.selectedCommit = message.detail.hash;
+        selectedCommitHashes.clear();
+        selectedCommitHashes.add(message.detail.hash);
+        lastSelectedCommitHash = message.detail.hash;
+        updateCommitSelectionUi();
+        const row = document.querySelector('[data-hash="' + message.detail.hash + '"]');
+        if (row) row.scrollIntoView({ block: 'nearest' });
+        const pane = document.querySelector('.detail');
+        if (pane) {
+          pane.innerHTML = renderDetail();
+          wireDetailPane();
+        }
+      }
+    });
 
     render();
   </script>

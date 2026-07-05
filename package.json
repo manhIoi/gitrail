@@ -26,10 +26,11 @@
     "onCommand:giPro.branches",
     "onCommand:giPro.compareFileWithHead",
     "onCommand:giPro.showFileHistory",
-    "onCommand:giPro.showLogGraph",
+    "onCommand:giPro.showHistoryForSelection",
     "onCommand:giPro.openGitLogView",
     "onCommand:giPro.cherryPick",
     "onView:giPro.logView",
+    "onView:giPro.historyView",
     "onView:giPro.branchDiffView"
   ],
   "main": "./dist/extension.js",
@@ -106,8 +107,8 @@
         "category": "GI Pro"
       },
       {
-        "command": "giPro.showLogGraph",
-        "title": "Show Log Graph",
+        "command": "giPro.showHistoryForSelection",
+        "title": "Show History for Selection",
         "category": "GI Pro"
       },
       {
@@ -147,6 +148,11 @@
           "id": "giProPanel",
           "title": "GI Pro",
           "icon": "media/git-log.svg"
+        },
+        {
+          "id": "giProHistoryPanel",
+          "title": "History",
+          "icon": "media/git-log.svg"
         }
       ]
     },
@@ -156,6 +162,14 @@
           "id": "giPro.logView",
           "name": "Log",
           "type": "webview"
+        }
+      ],
+      "giProHistoryPanel": [
+        {
+          "id": "giPro.historyView",
+          "name": "History",
+          "type": "webview",
+          "when": "giPro.historyAvailable"
         }
       ],
       "scm": [
@@ -176,6 +190,11 @@
           "command": "giPro.showFileHistory",
           "group": "navigation@51",
           "when": "resourceScheme == file"
+        },
+        {
+          "command": "giPro.showHistoryForSelection",
+          "group": "navigation@52",
+          "when": "resourceScheme == file && editorHasSelection"
         }
       ],
       "scm/title": [

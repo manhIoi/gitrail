@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { showBranchDiffWithWorkingTree, showGitLogView, GitProContentProvider, registerGitLogView } from './gitLogView';
 import { GitRunner, shellQuote } from './gitRunner';
+import { registerHistoryView, showFileHistoryView, showSelectionHistoryView } from './historyView';
 import { registerInlineBlame } from './inlineBlame';
 
 type Command = {
@@ -47,6 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(gitOutputChannel);
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('gitpro', new GitProContentProvider(git)));
   registerGitLogView(context, git);
+  registerHistoryView(context);
   registerInlineBlame(context);
   registerAbortContextRefresh(context, git);
 
@@ -65,7 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
     { id: 'giPro.branches', handler: () => branches(context, git) },
     { id: 'giPro.compareFileWithHead', handler: () => compareFileWithHead(git) },
     { id: 'giPro.showFileHistory', handler: () => showFileHistory(git) },
-    { id: 'giPro.showLogGraph', handler: () => showGitOutput(git, 'git log --graph --decorate --oneline --all -n 80', 'Git Log Graph') },
+    { id: 'giPro.showHistoryForSelection', handler: () => showHistoryForSelection(git) },
     { id: 'giPro.openGitLogView', handler: () => showGitLogView(context, git) },
     { id: 'giPro.cherryPick', handler: () => cherryPick(git) }
   ];
@@ -586,7 +588,32 @@ async function showFileHistory(git: GitRunner): Promise<void> {
     return;
   }
 
-  await showGitOutput(git, `git log --follow --decorate --oneline -- ${shellQuote(file)}`, `History -- ${file}`);
+  try {
+    await showFileHistoryView(git, file);
+  } catch (error) {
+    vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function showHistoryForSelection(git: GitRunner): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  const file = getActiveFile();
+  if (!editor || !file) {
+    return;
+  }
+
+  const selection = editor.selection;
+  const startLine = selection.start.line + 1;
+  // A selection ending at column 0 does not include that line.
+  const endLine = selection.end.character === 0 && selection.end.line > selection.start.line
+    ? selection.end.line
+    : selection.end.line + 1;
+
+  try {
+    await showSelectionHistoryView(git, file, startLine, endLine);
+  } catch (error) {
+    vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+  }
 }
 
 async function cherryPick(git: GitRunner): Promise<void> {
