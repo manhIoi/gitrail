@@ -1,15 +1,29 @@
 {
   "name": "gi-pro",
   "displayName": "GI Pro",
-  "description": "VS Code extension with GI Pro Git commands and quick workflows.",
+  "description": "Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "iammanhloi",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.92.0"
   },
   "categories": [
     "Source Control"
   ],
+  "keywords": [
+    "git",
+    "source control",
+    "git log",
+    "file history",
+    "inline blame",
+    "cherry-pick",
+    "rebase"
+  ],
+  "galleryBanner": {
+    "color": "#1f6feb",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onStartupFinished",
     "onCommand:giPro.smartCommit",
@@ -280,6 +294,7 @@
     "@types/vscode": "^1.92.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^9.0.0",
     "typescript": "^5.5.0"
   }
