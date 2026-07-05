@@ -54,11 +54,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const commands: Command[] = [
     { id: 'giPro.smartCommit', handler: () => smartCommit(git) },
-    { id: 'giPro.fetch', handler: () => execGitAction(git, 'git fetch --all --prune', 'Fetch completed.') },
-    { id: 'giPro.pullRebase', handler: () => execGitAction(git, 'git pull --rebase --autostash', 'Pull with rebase completed.') },
-    { id: 'giPro.push', handler: () => execGitAction(git, 'git push', 'Push completed.') },
-    { id: 'giPro.forcePushLease', handler: () => confirmAndRun(git, 'Force push with lease?', 'git push --force-with-lease') },
-    { id: 'giPro.amendNoEdit', handler: () => confirmAndRun(git, 'Amend the last commit without editing its message?', 'git commit --amend --no-edit') },
+    { id: 'giPro.fetch', handler: () => execGitAction(git, 'git fetch --all --prune', 'Fetch completed.', 'Fetching all remotes...') },
+    { id: 'giPro.pullRebase', handler: () => execGitAction(git, 'git pull --rebase --autostash', 'Pull with rebase completed.', 'Pulling with rebase...') },
+    { id: 'giPro.push', handler: () => execGitAction(git, 'git push', 'Push completed.', 'Pushing...') },
+    { id: 'giPro.forcePushLease', handler: () => confirmAndRun(git, 'Force push with lease?', 'git push --force-with-lease', 'Force pushing with lease...') },
+    { id: 'giPro.amendNoEdit', handler: () => confirmAndRun(git, 'Amend the last commit without editing its message?', 'git commit --amend --no-edit', 'Amending last commit...') },
     { id: 'giPro.interactiveRebase', handler: () => interactiveRebase(git) },
     { id: 'giPro.abortGitOperation', handler: () => abortGitOperation(git) },
     { id: 'giPro.stash', handler: () => stash(git) },
@@ -567,10 +567,36 @@ async function deleteSelectedBranch(git: GitRunner, branch: string, branchType: 
   }
 
   const remote = remoteBranchParts(branch);
-  const command = branchType === 'remote' && remote
-    ? `git push ${shellQuote(remote.remote)} --delete ${shellQuote(remote.name)}`
-    : `git branch -d ${shellQuote(branch)}`;
-  await execGitAction(git, command, 'Branch deleted.');
+  if (branchType === 'remote' && remote) {
+    await execGitAction(git, `git push ${shellQuote(remote.remote)} --delete ${shellQuote(remote.name)}`, 'Branch deleted.');
+    return;
+  }
+
+  try {
+    await git.exec(`git branch -d ${shellQuote(branch)}`);
+    vscode.window.showInformationMessage('Branch deleted.');
+  } catch (error) {
+    if (!isBranchNotFullyMergedError(error)) {
+      vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    const forceAnswer = await vscode.window.showWarningMessage(
+      `Branch ${branch} is not fully merged. Delete it anyway?`,
+      { modal: true },
+      'Force Delete'
+    );
+    if (forceAnswer === 'Force Delete') {
+      await execGitAction(git, `git branch -D ${shellQuote(branch)}`, 'Branch deleted.');
+    }
+  } finally {
+    await refreshAbortContext(git);
+  }
+}
+
+function isBranchNotFullyMergedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not fully merged/i.test(message);
 }
 
 async function compareFileWithHead(git: GitRunner): Promise<void> {
@@ -636,10 +662,10 @@ async function cherryPick(git: GitRunner): Promise<void> {
   }
 }
 
-async function confirmAndRun(git: GitRunner, prompt: string, command: string): Promise<void> {
+async function confirmAndRun(git: GitRunner, prompt: string, command: string, progressTitle?: string): Promise<void> {
   const answer = await vscode.window.showWarningMessage(prompt, { modal: true }, 'Run');
   if (answer === 'Run') {
-    await execGitAction(git, command, 'Git action completed.');
+    await execGitAction(git, command, 'Git action completed.', progressTitle);
   }
 }
 
@@ -653,9 +679,12 @@ async function safeExec(git: GitRunner, command: string): Promise<string | undef
   }
 }
 
-async function execGitAction(git: GitRunner, command: string, successMessage: string): Promise<void> {
+async function execGitAction(git: GitRunner, command: string, successMessage: string, progressTitle?: string): Promise<void> {
   try {
-    await git.exec(command);
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: progressTitle ?? `GI Pro: ${command}` },
+      () => git.exec(command)
+    );
     vscode.window.showInformationMessage(successMessage);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -740,17 +740,38 @@ class GitLogController {
     }
 
     const remote = remoteBranchParts(branch);
-    const command = branchType === 'remote' && remote
-      ? `git push ${shellQuote(remote.remote)} --delete ${shellQuote(remote.name)}`
-      : `git branch -d ${shellQuote(branch)}`;
-    await this.runGitAction(command, 'Branch deleted.');
+    if (branchType === 'remote' && remote) {
+      await this.runGitAction(`git push ${shellQuote(remote.remote)} --delete ${shellQuote(remote.name)}`, 'Branch deleted.');
+    } else {
+      try {
+        await this.runGitAction(`git branch -d ${shellQuote(branch)}`, 'Branch deleted.');
+      } catch (error) {
+        if (!isBranchNotFullyMergedError(error)) {
+          throw error;
+        }
+
+        const forceAnswer = await vscode.window.showWarningMessage(
+          `Branch ${branch} is not fully merged. Delete it anyway?`,
+          { modal: true },
+          'Force Delete'
+        );
+        if (forceAnswer !== 'Force Delete') {
+          return;
+        }
+
+        await this.runGitAction(`git branch -D ${shellQuote(branch)}`, 'Branch deleted.');
+      }
+    }
     if (this.selectedBranch === branch) {
       this.selectedBranch = undefined;
     }
   }
 
   private async runGitAction(command: string, successMessage?: string): Promise<string> {
-    const output = await this.git.exec(command);
+    const output = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `GI Pro: ${command}` },
+      () => this.git.exec(command)
+    );
     if (successMessage) {
       vscode.window.showInformationMessage(successMessage);
     }
@@ -930,7 +951,8 @@ class GitLogController {
   }
 
   private async loadCommits(branches: Branch[]): Promise<Commit[]> {
-    const target = '--all --exclude=refs/stash';
+    // --exclude only affects ref options that FOLLOW it, so it must precede --all.
+    const target = '--exclude=refs/stash --all';
     const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
     const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n 300 ${target}`);
 
@@ -1020,6 +1042,11 @@ function parseChangedFile(line: string): ChangedFile | undefined {
   }
 
   return { status, path: first };
+}
+
+function isBranchNotFullyMergedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not fully merged/i.test(message);
 }
 
 function parseTrackingStatus(value: string | undefined): BranchTrackingStatus {
@@ -2403,7 +2430,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	  function render() {
 	    const commitsView = renderCommits(filteredCommits());
 	    document.getElementById('root').innerHTML =
-	      '<main class="app" style="--sidebar-width: ' + paneSizes.sidebar + 'px; --detail-width: ' + paneSizes.detail + 'px;">' +
+	      '<main class="app">' +
 		        '<aside class="sidebar">' +
 		          '<div class="toolbar"><input id="branchSearch" class="search" placeholder="Search branches"></div>' +
 		          '<div id="branches" class="branch-list">' + renderBranches() + '</div>' +
@@ -2411,13 +2438,19 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		        '<div class="pane-resizer" data-resize-pane="sidebar" title="Resize branches"></div>' +
 		        '<section class="commits">' +
 		          renderCommitToolbar() +
-		          '<div id="commits" class="commit-list" style="--graph-col: ' + commitsView.graphWidth + 'px">' + commitsView.html + '</div>' +
+		          '<div id="commits" class="commit-list">' + commitsView.html + '</div>' +
 		        '</section>' +
 		        '<div class="pane-resizer" data-resize-pane="detail" title="Resize details"></div>' +
 	        '<aside class="detail">' + renderDetail() + '</aside>' +
         '</main>' +
         renderBranchContextMenu() +
         renderCommitContextMenu();
+      // The webview CSP (style-src 'nonce-...') blocks style="" attributes in
+      // generated HTML, so sizing vars must be applied through the CSSOM.
+      const app = document.querySelector('.app');
+      app.style.setProperty('--sidebar-width', paneSizes.sidebar + 'px');
+      app.style.setProperty('--detail-width', paneSizes.detail + 'px');
+      document.getElementById('commits').style.setProperty('--graph-col', commitsView.graphWidth + 'px');
       wire();
       restoreScrollPositions();
     }
