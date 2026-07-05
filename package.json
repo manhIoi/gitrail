@@ -8,11 +8,11 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iammanhloi/git-pro.git"
+    "url": "https://github.com/iammanhIoi/gi-pro.git"
   },
-  "homepage": "https://github.com/iammanhloi/git-pro#readme",
+  "homepage": "https://github.com/iammanhIoi/gi-pro#readme",
   "bugs": {
-    "url": "https://github.com/iammanhloi/git-pro/issues"
+    "url": "https://github.com/iammanhIoi/gi-pro/issues"
   },
   "engines": {
     "vscode": "^1.92.0"
