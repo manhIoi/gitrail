@@ -2,7 +2,7 @@
   "name": "gi-pro",
   "displayName": "GI Pro",
   "description": "Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "iammanhloi",
   "license": "MIT",
   "icon": "media/icon.png",

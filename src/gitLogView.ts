@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { GitRunner, shellQuote } from './gitRunner';
@@ -138,6 +139,9 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private controller: GitLogController | undefined;
   private pendingBranchDiff: string | undefined;
+  private repoWatchers: vscode.FileSystemWatcher[] = [];
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private needsRefresh = false;
 
   constructor(private readonly git: GitRunner) {}
 
@@ -153,6 +157,14 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     this.controller = new GitLogController(this.git, webviewView.webview, root.fsPath);
     currentController = this.controller;
     webviewView.webview.onDidReceiveMessage((message: unknown) => this.controller?.handleMessage(message));
+    this.watchRepository(root.fsPath);
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible && this.needsRefresh) {
+        this.needsRefresh = false;
+        void this.controller?.render();
+      }
+    });
+    webviewView.onDidDispose(() => this.stopWatching());
     if (this.pendingBranchDiff) {
       const branch = this.pendingBranchDiff;
       this.pendingBranchDiff = undefined;
@@ -173,6 +185,71 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     }
     await this.controller.showBranchDiff(branch);
   }
+
+  private watchRepository(rootPath: string): void {
+    this.stopWatching();
+    const gitDir = resolveGitDir(rootPath);
+    const watchDirs = new Set([gitDir]);
+    try {
+      // Linked worktrees keep shared refs in the common git dir.
+      const commonDir = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
+      watchDirs.add(path.resolve(gitDir, commonDir));
+    } catch {
+      // No commondir file: regular repository layout.
+    }
+
+    for (const dir of watchDirs) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(dir), '{HEAD,packed-refs,FETCH_HEAD,MERGE_HEAD,ORIG_HEAD,refs/**}')
+      );
+      const schedule = () => this.scheduleRefresh();
+      watcher.onDidChange(schedule);
+      watcher.onDidCreate(schedule);
+      watcher.onDidDelete(schedule);
+      this.repoWatchers.push(watcher);
+    }
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      if (this.view?.visible) {
+        void this.controller?.render();
+      } else {
+        this.needsRefresh = true;
+      }
+    }, 400);
+  }
+
+  private stopWatching(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+    for (const watcher of this.repoWatchers) {
+      watcher.dispose();
+    }
+    this.repoWatchers = [];
+  }
+}
+
+function resolveGitDir(rootPath: string): string {
+  const dotGit = path.join(rootPath, '.git');
+  try {
+    // In worktrees and submodules .git is a file containing "gitdir: <path>".
+    if (fs.statSync(dotGit).isFile()) {
+      const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/m);
+      if (match) {
+        return path.resolve(rootPath, match[1].trim());
+      }
+    }
+  } catch {
+    // Fall through to the default .git directory.
+  }
+  return dotGit;
 }
 
 class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeItem> {
