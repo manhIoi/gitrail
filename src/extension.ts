@@ -26,7 +26,6 @@ type BranchTrackingStatus = {
 
 type BranchActionItem = vscode.QuickPickItem & {
   action:
-    | 'back'
     | 'checkout'
     | 'newBranchFrom'
     | 'checkoutRebaseOnto'
@@ -401,9 +400,6 @@ async function showBranchActions(
   }
 
   switch (selected.action) {
-    case 'back':
-      await branches(context, git);
-      return;
     case 'checkout':
       await checkoutSelectedBranch(git, branch, branchType);
       return;
@@ -430,7 +426,7 @@ async function showBranchActions(
       await execGitAction(git, `git merge --no-ff ${shellQuote(branch)}`, 'Merge completed.');
       return;
     case 'update':
-      await updateSelectedBranch(git, branch, branchType);
+      await updateSelectedBranch(git, branch, branchType, currentBranch);
       return;
     case 'push':
       await pushSelectedBranch(git, branch, branchType);
@@ -453,8 +449,6 @@ function branchActionItems(
   const current = currentBranch || 'current branch';
   const isRemote = branchType === 'remote';
   const items: BranchActionItem[] = [
-    { label: '← Back to Branches', action: 'back' },
-    { label: '', kind: vscode.QuickPickItemKind.Separator, action: 'back' },
     { label: 'Checkout', action: 'checkout', description: isCurrent ? 'current branch' : undefined },
     { label: `New Branch from '${branch}'...`, action: 'newBranchFrom' }
   ];
@@ -528,12 +522,33 @@ async function checkoutRevision(git: GitRunner): Promise<void> {
   }
 }
 
-async function updateSelectedBranch(git: GitRunner, branch: string, branchType: 'local' | 'remote'): Promise<void> {
+async function updateSelectedBranch(git: GitRunner, branch: string, branchType: 'local' | 'remote', currentBranch: string | undefined): Promise<void> {
   if (branchType === 'remote') {
     await execGitAction(git, 'git fetch --all --prune', 'Remote branches updated.');
     return;
   }
-  await execGitAction(git, `git checkout ${shellQuote(branch)} && git pull --ff-only`, 'Branch updated.');
+
+  if (currentBranch === branch) {
+    await execGitAction(git, 'git pull --ff-only', 'Branch updated.');
+    return;
+  }
+
+  const { remote, remoteBranch } = await resolveUpstream(git, branch);
+  await execGitAction(git, `git fetch ${shellQuote(remote)} ${shellQuote(remoteBranch)}:${shellQuote(branch)}`, 'Branch updated.');
+}
+
+async function resolveUpstream(git: GitRunner, branch: string): Promise<{ remote: string; remoteBranch: string }> {
+  let upstream: string | undefined;
+  try {
+    upstream = (await git.exec(`git rev-parse --abbrev-ref ${shellQuote(branch)}@{upstream}`)).trim() || undefined;
+  } catch {
+    upstream = undefined;
+  }
+
+  const slashIndex = upstream?.indexOf('/') ?? -1;
+  return slashIndex > 0
+    ? { remote: upstream!.slice(0, slashIndex), remoteBranch: upstream!.slice(slashIndex + 1) }
+    : { remote: 'origin', remoteBranch: branch };
 }
 
 async function pushSelectedBranch(git: GitRunner, branch: string, branchType: 'local' | 'remote'): Promise<void> {

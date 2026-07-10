@@ -59,6 +59,7 @@ type ViewState = {
   selectedCommit?: string;
   branches: Branch[];
   commits: Commit[];
+  currentUser?: string;
   detail?: CommitDetail;
   branchDiff?: BranchDiff;
   error?: string;
@@ -773,8 +774,28 @@ class GitLogController {
       return;
     }
 
-    await this.runGitAction(`git checkout ${shellQuote(branch)} && git pull --ff-only`, 'Branch updated.');
+    const currentBranch = await this.getCurrentBranch();
+    if (currentBranch === branch) {
+      await this.runGitAction('git pull --ff-only', 'Branch updated.');
+    } else {
+      const { remote, remoteBranch } = await this.resolveUpstream(branch);
+      await this.runGitAction(`git fetch ${shellQuote(remote)} ${shellQuote(remoteBranch)}:${shellQuote(branch)}`, 'Branch updated.');
+    }
     this.selectedBranch = branch;
+  }
+
+  private async resolveUpstream(branch: string): Promise<{ remote: string; remoteBranch: string }> {
+    let upstream: string | undefined;
+    try {
+      upstream = (await this.git.exec(`git rev-parse --abbrev-ref ${shellQuote(branch)}@{upstream}`)).trim() || undefined;
+    } catch {
+      upstream = undefined;
+    }
+
+    const slashIndex = upstream?.indexOf('/') ?? -1;
+    return slashIndex > 0
+      ? { remote: upstream!.slice(0, slashIndex), remoteBranch: upstream!.slice(slashIndex + 1) }
+      : { remote: 'origin', remoteBranch: branch };
   }
 
   private async pushBranch(branch: string, branchType: Branch['type'] | undefined): Promise<void> {
@@ -949,6 +970,7 @@ class GitLogController {
   }
 
   private async loadState(): Promise<ViewState> {
+    const currentUser = await this.getCurrentUser();
     try {
       const branches = await this.loadBranches();
       const commits = await this.loadCommits(branches);
@@ -963,6 +985,7 @@ class GitLogController {
         selectedCommit,
         branches,
         commits,
+        currentUser,
         detail,
         branchDiff
       };
@@ -973,8 +996,18 @@ class GitLogController {
         selectedCommit: this.selectedCommit,
         branches: [],
         commits: [],
+        currentUser,
         error: error instanceof Error ? error.message : String(error)
       };
+    }
+  }
+
+  private async getCurrentUser(): Promise<string | undefined> {
+    try {
+      const output = await this.git.exec('git config user.name');
+      return output.trim() || undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -1460,6 +1493,14 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .filter-pinned .filter-option span {
+      font-weight: 600;
+    }
+    .filter-menu-divider {
+      height: 1px;
+      margin: 4px 2px 6px;
+      background: var(--context-border);
+    }
     .toolbar-spacer {
       flex: 1 1 auto;
     }
@@ -1782,22 +1823,61 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .gd-6 { fill: var(--gc-6); stroke: var(--gc-6); }
     .gd-7 { fill: var(--gc-7); stroke: var(--gc-7); }
     .subject {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       min-width: 0;
       overflow: hidden;
       white-space: nowrap;
-      text-overflow: ellipsis;
       font-weight: 600;
+    }
+    .subject-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .refs {
       display: inline-flex;
+      flex: 0 1 auto;
       gap: 4px;
-      margin-left: 8px;
+      min-width: 0;
       vertical-align: middle;
     }
     .ref {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       color: var(--ref-color);
       font-size: 11px;
       font-weight: 600;
+    }
+    .branch-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 1 auto;
+      min-width: 28px;
+      max-width: 42%;
+      margin-left: auto;
+      color: var(--muted);
+      opacity: 0.58;
+      font-size: 11px;
+      font-weight: 600;
+      overflow: hidden;
+    }
+    .branch-hint svg {
+      flex: 0 0 14px;
+      opacity: 0.85;
+    }
+    .branch-hint-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .commit-row:hover .branch-hint,
+    .commit-row.active .branch-hint {
+      opacity: 0.82;
     }
     .ref.current-ref {
       color: var(--current-icon);
@@ -2077,18 +2157,23 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        '<span class="filter-chevron" aria-hidden="true"></span>';
 	    }
 
-	    function renderFilterDropdown(kind, label, options, selected) {
+	    function renderFilterOption(kind, value, displayLabel, selected, searchable) {
+	      const checked = selected.has(value) ? ' checked' : '';
+	      const rowAttr = searchable ? ' data-filter-option-row="' + html(displayLabel.toLowerCase()) + '"' : '';
+	      return '<label class="filter-option" title="' + html(displayLabel) + '"' + rowAttr + '>' +
+	        '<input type="checkbox" data-filter-option="' + html(kind) + '" value="' + html(value) + '"' + checked + '>' +
+	        '<span>' + html(displayLabel) + '</span>' +
+	      '</label>';
+	    }
+
+	    function renderFilterDropdown(kind, label, pinned, options, selected) {
 	      const active = selected.size > 0 ? ' active' : '';
-	      const items = options.map((option) => {
-	        const checked = selected.has(option) ? ' checked' : '';
-	        return '<label class="filter-option" title="' + html(option) + '" data-filter-option-row="' + html(option.toLowerCase()) + '">' +
-	          '<input type="checkbox" data-filter-option="' + html(kind) + '" value="' + html(option) + '"' + checked + '>' +
-	          '<span>' + html(option) + '</span>' +
-	        '</label>';
-	      }).join('');
+	      const pinnedItems = pinned.map((option) => renderFilterOption(kind, option.value, option.display, selected, false)).join('');
+	      const items = options.map((option) => renderFilterOption(kind, option, option, selected, true)).join('');
 	      return '<div class="filter-dropdown" data-filter-dropdown="' + html(kind) + '">' +
 	        '<button class="filter-dropdown-button' + active + '" type="button" data-filter-toggle="' + html(kind) + '">' + filterButtonLabel(label, selected.size) + '</button>' +
 	        '<div class="filter-menu">' +
+	          (pinnedItems ? '<div class="filter-pinned">' + pinnedItems + '</div><div class="filter-menu-divider"></div>' : '') +
 	          '<input class="filter-menu-search" data-filter-menu-search="' + html(kind) + '" placeholder="Search ' + html(label.toLowerCase()) + '">' +
 	          (items || '<div class="empty">No options</div>') +
 	        '</div>' +
@@ -2104,8 +2189,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          '<button class="filter-toggle" type="button" title="Match case" data-filter-flag="matchCase">Aa</button>' +
 	          '<button class="filter-toggle" type="button" title="Match regex" data-filter-flag="regex">.*</button>' +
 	        '</div>' +
-	        renderFilterDropdown('branches', 'Branch', branchFilterOptions(), commitFilters.branches) +
-	        renderFilterDropdown('users', 'User', userFilterOptions(), commitFilters.users) +
+	        renderFilterDropdown('branches', 'Branch', currentBranch ? [{ value: currentBranch, display: 'HEAD' }] : [], branchFilterOptions(), commitFilters.branches) +
+	        renderFilterDropdown('users', 'User', state.currentUser ? [{ value: state.currentUser, display: 'Me' }] : [], userFilterOptions(), commitFilters.users) +
 	        '<span class="toolbar-spacer"></span>' +
 	        '<button id="goToHead" class="icon-button" type="button" title="Go to branch head (selected branch or current)">' + targetIcon() + '</button>' +
 	        '</div>';
@@ -2373,6 +2458,44 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       };
     }
 
+    function commitTooltip(commit) {
+      const branches = Array.from(new Set(commit.branches || [])).sort((a, b) => a.localeCompare(b));
+      const branchText = branches.length ? branches.join(', ') : 'No containing branch';
+      return 'Branches: ' + branchText + '\\n' +
+        'Commit: ' + commit.shortHash + '\\n' +
+        'Author: ' + (commit.author || '-') + '\\n' +
+        'Date: ' + (formatDate(commit.date) || '-');
+    }
+
+    function commitBranchHint(commit) {
+      const branch = pickCommitBranch(commit);
+      if (!branch) return '';
+      if ((commit.refs || []).map(refName).includes(branch)) return '';
+      return '<span class="branch-hint" title="' + html(branch) + '">' +
+        tagIcon() +
+        '<span class="branch-hint-name">' + html(branch) + '</span>' +
+      '</span>';
+    }
+
+    function pickCommitBranch(commit) {
+      const branches = Array.from(new Set(commit.branches || []));
+      if (!branches.length) return undefined;
+
+      const refBranches = (commit.refs || [])
+        .map(refName)
+        .filter((name) => branches.includes(name));
+      const preferred = [
+        state.selectedBranch,
+        currentBranch,
+        ...refBranches,
+        ...branches.filter((name) => branchesByName.get(name)?.type === 'local'),
+        ...branches.filter((name) => branchesByName.get(name)?.type === 'remote'),
+        ...branches
+      ].filter(Boolean);
+
+      return preferred.find((name, index) => preferred.indexOf(name) === index && branches.includes(name));
+    }
+
 	    function renderCommits(commits = state.commits) {
 	      if (state.error) return { html: '<div class="error">' + html(state.error) + '</div>', graphWidth: 48 };
 	      if (!commits.length) return { html: '<div class="empty">No commits found</div>', graphWidth: 48 };
@@ -2382,9 +2505,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      commits.forEach((commit) => {
 	        const active = selectedCommitHashes.has(commit.hash);
 	        const isMerge = commit.parents.length > 1;
-	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '">' +
+	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '" title="' + html(commitTooltip(commit)) + '">' +
           '<div class="graph-cell"></div>' +
-          '<div class="subject">' + html(commit.subject) + refLabels(commit.refs) + '</div>' +
+          '<div class="subject"><span class="subject-text">' + html(commit.subject) + '</span>' + refLabels(commit.refs) + commitBranchHint(commit) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
           '<div class="date">' + html(formatDate(commit.date)) + '</div>' +
 	        '</div>';
@@ -2848,6 +2971,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          } else {
 	            selected.delete(node.value);
 	          }
+	          document.querySelectorAll('[data-filter-option="' + key + '"]').forEach((el) => {
+	            el.checked = selected.has(el.value);
+	          });
 	          persistViewState();
 	          updateCommitFilterIndicators();
 	          applyCommitFilters();
