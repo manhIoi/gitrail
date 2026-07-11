@@ -2,7 +2,7 @@
   "name": "gi-pro",
   "displayName": "GI Pro",
   "description": "Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "iammanhloi",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -147,17 +147,26 @@
       {
         "command": "giPro.branchDiff.refresh",
         "title": "Refresh",
-        "category": "GI Pro"
+        "category": "GI Pro",
+        "icon": "$(refresh)"
       },
       {
         "command": "giPro.branchDiff.getAll",
         "title": "Get All",
-        "category": "GI Pro"
+        "category": "GI Pro",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "giPro.branchDiff.getFile",
         "title": "Get",
-        "category": "GI Pro"
+        "category": "GI Pro",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "giPro.branchDiff.close",
+        "title": "Close Diff",
+        "category": "GI Pro",
+        "icon": "$(close)"
       },
       {
         "command": "giPro.branchDiff.openFile",
@@ -198,7 +207,8 @@
       "scm": [
         {
           "id": "giPro.branchDiffView",
-          "name": "GI Pro Diff"
+          "name": "GI Pro Diff",
+          "when": "giPro.branchDiffVisible"
         }
       ]
     },
@@ -237,6 +247,11 @@
           "command": "giPro.branchDiff.getAll",
           "group": "navigation@2",
           "when": "view == giPro.branchDiffView && giPro.branchDiffAvailable"
+        },
+        {
+          "command": "giPro.branchDiff.close",
+          "group": "navigation@3",
+          "when": "view == giPro.branchDiffView"
         }
       ],
       "view/item/context": [
@@ -257,6 +272,10 @@
         },
         {
           "command": "giPro.branchDiff.getFile",
+          "when": "false"
+        },
+        {
+          "command": "giPro.branchDiff.close",
           "when": "false"
         },
         {

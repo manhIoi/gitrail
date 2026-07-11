@@ -83,6 +83,8 @@ const branchDiffViewId = 'giPro.branchDiffView';
 const gitLogPanelId = 'giProPanel';
 
 export function registerGitLogView(context: vscode.ExtensionContext, git: GitRunner): void {
+  void vscode.commands.executeCommand('setContext', 'giPro.branchDiffVisible', false);
+  void vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', false);
   currentProvider = new GitLogViewProvider(git);
   currentBranchDiffProvider = new BranchDiffTreeProvider(git);
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(gitLogViewId, currentProvider, {
@@ -99,6 +101,7 @@ export function registerGitLogView(context: vscode.ExtensionContext, git: GitRun
     branchDiffTree,
     vscode.commands.registerCommand('giPro.branchDiff.refresh', () => currentBranchDiffProvider?.refresh()),
     vscode.commands.registerCommand('giPro.branchDiff.getAll', () => currentBranchDiffProvider?.getAll()),
+    vscode.commands.registerCommand('giPro.branchDiff.close', () => currentBranchDiffProvider?.close()),
     vscode.commands.registerCommand('giPro.branchDiff.openFile', (item?: BranchDiffTreeItem) => currentBranchDiffProvider?.openItem(item)),
     vscode.commands.registerCommand('giPro.branchDiff.getFile', (item?: BranchDiffTreeItem) => currentBranchDiffProvider?.getItem(item))
   );
@@ -131,9 +134,10 @@ async function openScmView(): Promise<void> {
 }
 
 async function showBranchDiffInScm(branch: string): Promise<void> {
+  await vscode.commands.executeCommand('setContext', 'giPro.branchDiffVisible', true);
   await openScmView();
-  await vscode.commands.executeCommand(`${branchDiffViewId}.focus`);
   await currentBranchDiffProvider?.showBranchDiff(branch);
+  await vscode.commands.executeCommand(`${branchDiffViewId}.focus`);
 }
 
 class GitLogViewProvider implements vscode.WebviewViewProvider {
@@ -272,6 +276,19 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
     this.branch = branch;
     this.selectedFile = undefined;
     await this.refresh();
+  }
+
+  async close(): Promise<void> {
+    this.branch = undefined;
+    this.selectedFile = undefined;
+    this.rootPath = undefined;
+    this.diff = undefined;
+    if (this.tree) {
+      this.tree.message = undefined;
+    }
+    await vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', false);
+    await vscode.commands.executeCommand('setContext', 'giPro.branchDiffVisible', false);
+    this.onDidChangeTreeDataEmitter.fire();
   }
 
   getTreeItem(element: BranchDiffTreeItem): vscode.TreeItem {
