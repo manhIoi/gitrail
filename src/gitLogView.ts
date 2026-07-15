@@ -706,7 +706,7 @@ class GitLogController {
         await this.runGitAction('git push', 'Push completed.');
         return;
       case 'rebaseCurrentOnto':
-        await this.runGitAction(`git rebase ${hash}`, 'Rebase completed.');
+        await this.runGitAction(`git rebase --autostash ${hash}`, 'Rebase completed.');
         return;
       case 'newBranch':
         await this.newBranchFromCommit(hash);
@@ -731,7 +731,7 @@ class GitLogController {
         return;
       case 'checkoutRebaseOnto':
         if (currentBranch) {
-          await this.runGitAction(`git checkout ${shellQuote(branch)} && git rebase ${shellQuote(currentBranch)}`, 'Checkout and rebase completed.');
+          await this.runGitAction(`git checkout ${shellQuote(branch)} && git rebase --autostash ${shellQuote(currentBranch)}`, 'Checkout and rebase completed.');
         }
         return;
       case 'compareWithCurrent':
@@ -743,7 +743,7 @@ class GitLogController {
         await showBranchDiffInScm(branch);
         return;
       case 'rebaseCurrentOnto':
-        await this.runGitAction(`git rebase ${shellQuote(branch)}`, 'Rebase completed.');
+        await this.runGitAction(`git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
         return;
       case 'mergeIntoCurrent':
         await this.runGitAction(`git merge --no-ff ${shellQuote(branch)}`, 'Merge completed.');

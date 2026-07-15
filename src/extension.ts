@@ -136,7 +136,7 @@ async function interactiveRebase(git: GitRunner): Promise<void> {
     validateInput: (value) => /^\d+$/.test(value) && Number(value) > 0 ? undefined : 'Enter a positive number.'
   });
   if (count) {
-    await execGitAction(git, `git rebase -i HEAD~${count}`, 'Interactive rebase started.');
+    await execGitAction(git, `git rebase -i --autostash HEAD~${count}`, 'Interactive rebase started.');
   }
 }
 
@@ -408,7 +408,7 @@ async function showBranchActions(
       return;
     case 'checkoutRebaseOnto':
       if (currentBranch) {
-        await execGitAction(git, `git checkout ${shellQuote(branch)} && git rebase ${shellQuote(currentBranch)}`, 'Checkout and rebase completed.');
+        await execGitAction(git, `git checkout ${shellQuote(branch)} && git rebase --autostash ${shellQuote(currentBranch)}`, 'Checkout and rebase completed.');
       }
       return;
     case 'compareWithCurrent':
@@ -420,7 +420,7 @@ async function showBranchActions(
       await showBranchDiffWithWorkingTree(context, git, branch);
       return;
     case 'rebaseCurrentOnto':
-      await execGitAction(git, `git rebase ${shellQuote(branch)}`, 'Rebase completed.');
+      await execGitAction(git, `git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
       return;
     case 'mergeIntoCurrent':
       await execGitAction(git, `git merge --no-ff ${shellQuote(branch)}`, 'Merge completed.');
