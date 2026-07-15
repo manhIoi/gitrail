@@ -73,6 +73,11 @@ type WebviewMessage = {
   hashes?: string[];
   file?: string;
   action?: string;
+  query?: string;
+  matchCase?: boolean;
+  regex?: boolean;
+  users?: string[];
+  branches?: string[];
 };
 
 let currentController: GitLogController | undefined;
@@ -508,6 +513,11 @@ class GitLogController {
   private selectedCommit: string | undefined;
   private diffBranch: string | undefined;
   private selectedDiffFile: string | undefined;
+  private commitFilterQuery = '';
+  private commitFilterMatchCase = false;
+  private commitFilterRegex = false;
+  private commitFilterUsers = new Set<string>();
+  private commitFilterBranches = new Set<string>();
   private readonly outputChannel = vscode.window.createOutputChannel('GI Pro Git');
 
   constructor(
@@ -531,6 +541,16 @@ class GitLogController {
     const message = raw as WebviewMessage;
     try {
       if (message.type === 'refresh') {
+        await this.render();
+        return;
+      }
+
+      if (message.type === 'updateCommitFilters') {
+        this.commitFilterQuery = message.query || '';
+        this.commitFilterMatchCase = Boolean(message.matchCase);
+        this.commitFilterRegex = Boolean(message.regex);
+        this.commitFilterUsers = new Set(message.users || []);
+        this.commitFilterBranches = new Set(message.branches || []);
         await this.render();
         return;
       }
