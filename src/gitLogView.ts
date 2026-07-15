@@ -537,14 +537,17 @@ class GitLogController {
 
   // Used for commit-list-only changes (pagination, filter updates) so the webview can
   // patch just the commit list instead of a full HTML replace, which would drop input
-  // focus and flicker the whole panel on every search keystroke.
-  private async postCommitsUpdate(): Promise<void> {
+  // focus and flicker the whole panel on every search keystroke. `reason` tells the
+  // webview whether to keep the current scroll position (loadMore, appending further
+  // down the list) or reset it to the top (filter, a new result set).
+  private async postCommitsUpdate(reason: 'loadMore' | 'filter'): Promise<void> {
     try {
       const branches = await this.loadBranches();
       const { commits, hasMoreCommits } = await this.loadCommits(branches);
       this.selectedCommit = this.selectVisibleCommit(commits);
       await this.webview.postMessage({
         type: 'commitsUpdated',
+        reason,
         commits,
         hasMoreCommits,
         selectedCommit: this.selectedCommit
@@ -552,6 +555,7 @@ class GitLogController {
     } catch (error) {
       await this.webview.postMessage({
         type: 'commitsUpdated',
+        reason,
         commits: [],
         hasMoreCommits: false,
         selectedCommit: this.selectedCommit,
@@ -581,7 +585,7 @@ class GitLogController {
         this.loadingMoreCommits = true;
         try {
           this.commitLimit += GitLogController.commitPageSize;
-          await this.postCommitsUpdate();
+          await this.postCommitsUpdate('loadMore');
         } finally {
           this.loadingMoreCommits = false;
         }
@@ -595,7 +599,7 @@ class GitLogController {
         this.commitFilterUsers = new Set(message.users || []);
         this.commitFilterBranches = new Set(message.branches || []);
         this.commitLimit = GitLogController.commitPageSize;
-        await this.postCommitsUpdate();
+        await this.postCommitsUpdate('filter');
         return;
       }
 
@@ -3410,6 +3414,16 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           list.style.setProperty('--graph-col', commitsView.graphWidth + 'px');
           list.innerHTML = commitsView.html;
           wireCommitRows();
+          // Replacing innerHTML resets scrollTop to 0. loadMore appends further down
+          // an existing list, so restore where the user was; filter is a new result
+          // set, so start at the top (and persist that reset).
+          if (message.reason === 'loadMore') {
+            list.scrollTop = scrollTops.commits;
+          } else {
+            list.scrollTop = 0;
+            scrollTops.commits = 0;
+            persistViewState();
+          }
         }
         return;
       }
