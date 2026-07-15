@@ -535,6 +535,31 @@ class GitLogController {
     this.webview.html = renderHtml(this.webview, state);
   }
 
+  // Used for commit-list-only changes (pagination, filter updates) so the webview can
+  // patch just the commit list instead of a full HTML replace, which would drop input
+  // focus and flicker the whole panel on every search keystroke.
+  private async postCommitsUpdate(): Promise<void> {
+    try {
+      const branches = await this.loadBranches();
+      const { commits, hasMoreCommits } = await this.loadCommits(branches);
+      this.selectedCommit = this.selectVisibleCommit(commits);
+      await this.webview.postMessage({
+        type: 'commitsUpdated',
+        commits,
+        hasMoreCommits,
+        selectedCommit: this.selectedCommit
+      });
+    } catch (error) {
+      await this.webview.postMessage({
+        type: 'commitsUpdated',
+        commits: [],
+        hasMoreCommits: false,
+        selectedCommit: this.selectedCommit,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   async showBranchDiff(branch: string): Promise<void> {
     this.diffBranch = branch;
     this.selectedDiffFile = undefined;
@@ -556,7 +581,7 @@ class GitLogController {
         this.loadingMoreCommits = true;
         try {
           this.commitLimit += GitLogController.commitPageSize;
-          await this.render();
+          await this.postCommitsUpdate();
         } finally {
           this.loadingMoreCommits = false;
         }
@@ -570,7 +595,7 @@ class GitLogController {
         this.commitFilterUsers = new Set(message.users || []);
         this.commitFilterBranches = new Set(message.branches || []);
         this.commitLimit = GitLogController.commitPageSize;
-        await this.render();
+        await this.postCommitsUpdate();
         return;
       }
 
@@ -1130,7 +1155,8 @@ class GitLogController {
   }
 
   private buildCommitFilterArgs(): string {
-    const needsRegexFlags = Boolean(this.commitFilterQuery) || this.commitFilterUsers.size > 0;
+    const query = this.commitFilterQuery.trim();
+    const needsRegexFlags = Boolean(query) || this.commitFilterUsers.size > 0;
     const args: string[] = [];
     if (needsRegexFlags) {
       // A single regex flavor (ERE) is used for both --grep and --author, since git
@@ -1142,12 +1168,15 @@ class GitLogController {
         args.push('-i');
       }
     }
-    if (this.commitFilterQuery) {
-      const pattern = this.commitFilterRegex ? this.commitFilterQuery : escapeRegExpLiteral(this.commitFilterQuery);
+    if (query) {
+      const pattern = this.commitFilterRegex ? query : escapeRegExpLiteral(query);
       args.push(`--grep=${shellQuote(pattern)}`);
     }
     for (const user of this.commitFilterUsers) {
-      args.push(`--author=${shellQuote('^' + escapeRegExpLiteral(user) + '$')}`);
+      // --author matches against the full "Name <email>" ident, so anchoring with a
+      // trailing $ (as if matching just the name) never matches anything. Anchor up
+      // to the " <" boundary instead.
+      args.push(`--author=${shellQuote('^' + escapeRegExpLiteral(user) + ' <')}`);
     }
     return args.join(' ');
   }
@@ -3359,6 +3388,31 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
     window.addEventListener('message', (event) => {
       const message = event.data || {};
+      if (message.type === 'commitsUpdated') {
+        state.commits = message.commits || [];
+        state.hasMoreCommits = Boolean(message.hasMoreCommits);
+        state.error = message.error;
+        loadingMoreCommits = false;
+        if (state.selectedCommit && message.selectedCommit === undefined) {
+          state.selectedCommit = undefined;
+          state.detail = undefined;
+          selectedCommitHashes.clear();
+          lastSelectedCommitHash = undefined;
+          const pane = document.querySelector('.detail');
+          if (pane) {
+            pane.innerHTML = renderDetail();
+            wireDetailPane();
+          }
+        }
+        const list = document.getElementById('commits');
+        if (list) {
+          const commitsView = renderCommits(state.commits);
+          list.style.setProperty('--graph-col', commitsView.graphWidth + 'px');
+          list.innerHTML = commitsView.html;
+          wireCommitRows();
+        }
+        return;
+      }
       if (message.type === 'commitDetail' && message.detail) {
         state.detail = message.detail;
         state.branchDiff = null;
