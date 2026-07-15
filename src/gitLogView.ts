@@ -1118,11 +1118,62 @@ class GitLogController {
     return undefined;
   }
 
-  private async loadCommits(branches: Branch[]): Promise<{ commits: Commit[]; hasMoreCommits: boolean }> {
+  private buildCommitLogTarget(): string {
+    if (this.commitFilterBranches.size > 0) {
+      // Scope traversal directly to the selected refs (git ORs multiple positional
+      // revs together), instead of --all + post-filtering a capped page — post-filtering
+      // can drop real matches once commits from other branches fill the page first.
+      return Array.from(this.commitFilterBranches).map(shellQuote).join(' ');
+    }
     // --exclude only affects ref options that FOLLOW it, so it must precede --all.
-    const target = '--exclude=refs/stash --all';
+    return '--exclude=refs/stash --all';
+  }
+
+  private buildCommitFilterArgs(): string {
+    const needsRegexFlags = Boolean(this.commitFilterQuery) || this.commitFilterUsers.size > 0;
+    const args: string[] = [];
+    if (needsRegexFlags) {
+      // A single regex flavor (ERE) is used for both --grep and --author, since git
+      // applies --fixed-strings/--extended-regexp/-i uniformly to both. "Non-regex"
+      // query mode is implemented by escaping metacharacters before building the
+      // pattern, not by switching flags.
+      args.push('--extended-regexp');
+      if (!this.commitFilterMatchCase) {
+        args.push('-i');
+      }
+    }
+    if (this.commitFilterQuery) {
+      const pattern = this.commitFilterRegex ? this.commitFilterQuery : escapeRegExpLiteral(this.commitFilterQuery);
+      args.push(`--grep=${shellQuote(pattern)}`);
+    }
+    for (const user of this.commitFilterUsers) {
+      args.push(`--author=${shellQuote('^' + escapeRegExpLiteral(user) + '$')}`);
+    }
+    return args.join(' ');
+  }
+
+  private async prependHashMatch(commits: Commit[]): Promise<void> {
+    const query = this.commitFilterQuery.trim();
+    if (!isCommitHash(query) || commits.some((commit) => commit.hash === query || commit.hash.startsWith(query))) {
+      return;
+    }
+    try {
+      const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
+      const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -1 ${shellQuote(query)}`);
+      const commit = parseCommitLine(raw.split(/\r?\n/)[0] || '');
+      if (commit && !commits.some((existing) => existing.hash === commit.hash)) {
+        commits.unshift(commit);
+      }
+    } catch {
+      // query isn't a resolvable revision (invalid or ambiguous prefix) — ignore.
+    }
+  }
+
+  private async loadCommits(branches: Branch[]): Promise<{ commits: Commit[]; hasMoreCommits: boolean }> {
+    const target = this.buildCommitLogTarget();
+    const filterArgs = this.buildCommitFilterArgs();
     const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
-    const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n ${this.commitLimit + 1} ${target}`);
+    const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n ${this.commitLimit + 1} ${filterArgs} ${target}`);
 
     const commits: Commit[] = [];
     for (const line of raw.split(/\r?\n/)) {
@@ -1131,6 +1182,7 @@ class GitLogController {
     }
     const hasMoreCommits = commits.length > this.commitLimit;
     commits.splice(this.commitLimit);
+    await this.prependHashMatch(commits);
     await this.assignCommitBranches(commits, branches);
     return { commits, hasMoreCommits };
   }
@@ -3390,6 +3442,10 @@ function escapeHtml(value: string): string {
 
 function splitLines(value: string): string[] {
   return value.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
+}
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function isCommitHash(value: string | undefined): value is string {
