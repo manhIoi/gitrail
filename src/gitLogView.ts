@@ -59,6 +59,7 @@ type ViewState = {
   selectedCommit?: string;
   branches: Branch[];
   commits: Commit[];
+  hasMoreCommits: boolean;
   currentUser?: string;
   detail?: CommitDetail;
   branchDiff?: BranchDiff;
@@ -509,10 +510,13 @@ function sortBranchDiffItems(items: BranchDiffTreeItem[]): void {
 }
 
 class GitLogController {
+  private static readonly commitPageSize = 300;
   private selectedBranch: string | undefined;
   private selectedCommit: string | undefined;
   private diffBranch: string | undefined;
   private selectedDiffFile: string | undefined;
+  private commitLimit = GitLogController.commitPageSize;
+  private loadingMoreCommits = false;
   private commitFilterQuery = '';
   private commitFilterMatchCase = false;
   private commitFilterRegex = false;
@@ -545,12 +549,27 @@ class GitLogController {
         return;
       }
 
+      if (message.type === 'loadMoreCommits') {
+        if (this.loadingMoreCommits) {
+          return;
+        }
+        this.loadingMoreCommits = true;
+        try {
+          this.commitLimit += GitLogController.commitPageSize;
+          await this.render();
+        } finally {
+          this.loadingMoreCommits = false;
+        }
+        return;
+      }
+
       if (message.type === 'updateCommitFilters') {
         this.commitFilterQuery = message.query || '';
         this.commitFilterMatchCase = Boolean(message.matchCase);
         this.commitFilterRegex = Boolean(message.regex);
         this.commitFilterUsers = new Set(message.users || []);
         this.commitFilterBranches = new Set(message.branches || []);
+        this.commitLimit = GitLogController.commitPageSize;
         await this.render();
         return;
       }
@@ -1010,7 +1029,7 @@ class GitLogController {
     const currentUser = await this.getCurrentUser();
     try {
       const branches = await this.loadBranches();
-      const commits = await this.loadCommits(branches);
+      const { commits, hasMoreCommits } = await this.loadCommits(branches);
       const selectedCommit = this.selectVisibleCommit(commits);
       this.selectedCommit = selectedCommit;
       const branchDiff = this.diffBranch ? await this.loadBranchDiff(this.diffBranch) : undefined;
@@ -1022,6 +1041,7 @@ class GitLogController {
         selectedCommit,
         branches,
         commits,
+        hasMoreCommits,
         currentUser,
         detail,
         branchDiff
@@ -1033,6 +1053,7 @@ class GitLogController {
         selectedCommit: this.selectedCommit,
         branches: [],
         commits: [],
+        hasMoreCommits: false,
         currentUser,
         error: error instanceof Error ? error.message : String(error)
       };
@@ -1097,19 +1118,21 @@ class GitLogController {
     return undefined;
   }
 
-  private async loadCommits(branches: Branch[]): Promise<Commit[]> {
+  private async loadCommits(branches: Branch[]): Promise<{ commits: Commit[]; hasMoreCommits: boolean }> {
     // --exclude only affects ref options that FOLLOW it, so it must precede --all.
     const target = '--exclude=refs/stash --all';
     const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
-    const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n 300 ${target}`);
+    const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -n ${this.commitLimit + 1} ${target}`);
 
     const commits: Commit[] = [];
     for (const line of raw.split(/\r?\n/)) {
       const commit = parseCommitLine(line);
       if (commit) commits.push(commit);
     }
+    const hasMoreCommits = commits.length > this.commitLimit;
+    commits.splice(this.commitLimit);
     await this.assignCommitBranches(commits, branches);
-    return commits;
+    return { commits, hasMoreCommits };
   }
 
   private async assignCommitBranches(commits: Commit[], branches: Branch[]): Promise<void> {
@@ -1120,7 +1143,8 @@ class GitLogController {
 
     await Promise.all(branches.map(async (branch) => {
       try {
-        const output = await this.git.exec(`git rev-list -n 1000 ${shellQuote(branch.name)}`);
+        const branchCommitLimit = Math.max(1000, this.commitLimit);
+        const output = await this.git.exec(`git rev-list -n ${branchCommitLimit} ${shellQuote(branch.name)}`);
         for (const hash of splitLines(output)) {
           const commit = commitsByHash.get(hash);
           if (commit) {
@@ -2080,6 +2104,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    };
 	    const selectedCommitHashes = new Set(state.selectedCommit ? [state.selectedCommit] : []);
 	    let lastSelectedCommitHash = state.selectedCommit;
+	    let loadingMoreCommits = false;
 
 	    function send(message) {
 	      vscode.postMessage(message);
@@ -2749,6 +2774,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		      document.querySelectorAll('.branch-list, .commit-list').forEach((node) => {
 		        node.addEventListener('scroll', () => {
 		          updateScrollState(node);
+		          if (node.id === 'commits') loadMoreCommitsNearBottom(node);
 		          closeBranchContextMenu();
 		          closeCommitContextMenu();
 		          closeFilterDropdowns();
@@ -2869,6 +2895,15 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		          if (action === 'closeBranchDiff') send({ type: 'closeBranchDiff' });
 		        });
 	      });
+	    }
+
+	    function loadMoreCommitsNearBottom(node) {
+	      if (loadingMoreCommits || !state.hasMoreCommits) return;
+	      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+	      if (distanceFromBottom > 240) return;
+	      loadingMoreCommits = true;
+	      updateScrollState(node);
+	      send({ type: 'loadMoreCommits' });
 	    }
 
 	    function wirePaneResizers() {
