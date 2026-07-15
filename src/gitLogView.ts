@@ -2157,6 +2157,29 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    const selectedCommitHashes = new Set(state.selectedCommit ? [state.selectedCommit] : []);
 	    let lastSelectedCommitHash = state.selectedCommit;
 	    let loadingMoreCommits = false;
+	    let commitFilterDebounce;
+
+	    function sendCommitFilters() {
+	      showCommitsSearching();
+	      send({
+	        type: 'updateCommitFilters',
+	        query: commitFilters.query,
+	        matchCase: commitFilters.matchCase,
+	        regex: commitFilters.regex,
+	        users: Array.from(commitFilters.users),
+	        branches: Array.from(commitFilters.branches)
+	      });
+	    }
+
+	    function sendCommitFiltersDebounced() {
+	      clearTimeout(commitFilterDebounce);
+	      commitFilterDebounce = setTimeout(sendCommitFilters, 280);
+	    }
+
+	    function showCommitsSearching() {
+	      const list = document.getElementById('commits');
+	      if (list) list.innerHTML = '<div class="empty">Searching…</div>';
+	    }
 
 	    function send(message) {
 	      vscode.postMessage(message);
@@ -2742,7 +2765,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
 
 	  function render() {
-	    const commitsView = renderCommits(filteredCommits());
+	    const commitsView = renderCommits(state.commits);
 	    document.getElementById('root').innerHTML =
 	      '<main class="app">' +
 		        '<aside class="sidebar">' +
@@ -2788,7 +2811,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	            input.checked = commitFilters.branches.has(input.value);
 	          });
 	          updateCommitFilterIndicators();
-	          applyCommitFilters();
+	          sendCommitFilters();
 	        });
 		        node.addEventListener('contextmenu', (event) => openBranchContextMenu(event, node));
 	      });
@@ -2918,7 +2941,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		    }
 
 		    function selectCommitRange(fromHash, toHash) {
-		      const commits = filteredCommits();
+		      const commits = state.commits;
 		      const fromIndex = commits.findIndex((commit) => commit.hash === fromHash);
 		      const toIndex = commits.findIndex((commit) => commit.hash === toHash);
 		      if (fromIndex < 0 || toIndex < 0) {
@@ -3010,7 +3033,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          commitFilters.query = event.target.value;
 	          persistViewState();
 	          updateCommitSearchClear();
-	          applyCommitFilters();
+	          sendCommitFiltersDebounced();
 	        });
 	      }
 
@@ -3023,7 +3046,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          if (search) search.value = '';
 	          persistViewState();
 	          updateCommitSearchClear();
-	          applyCommitFilters();
+	          sendCommitFilters();
 	        });
 	      }
 
@@ -3035,7 +3058,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          commitFilters[key] = !commitFilters[key];
 	          persistViewState();
 	          node.classList.toggle('active', Boolean(commitFilters[key]));
-	          applyCommitFilters();
+	          sendCommitFilters();
 	        });
 	      });
 
@@ -3100,7 +3123,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          });
 	          persistViewState();
 	          updateCommitFilterIndicators();
-	          applyCommitFilters();
+	          sendCommitFilters();
 	        });
 	      });
 	    }
@@ -3132,7 +3155,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      });
 	      persistViewState();
 	      updateCommitFilterIndicators();
-	      applyCommitFilters();
+	      sendCommitFilters();
 	    }
 
 	    function updateCommitFilterIndicators() {
@@ -3145,55 +3168,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          button.innerHTML = filterButtonLabel(label, commitFilters[key].size);
 	        }
 	      });
-	    }
-
-	    function applyCommitFilters() {
-	      const list = document.getElementById('commits');
-	      if (!list) return;
-	      const commitsView = renderCommits(filteredCommits());
-	      list.style.setProperty('--graph-col', commitsView.graphWidth + 'px');
-	      list.innerHTML = commitsView.html;
-	      wireCommitRows();
-	    }
-
-	    function filteredCommits() {
-	      const query = commitFilters.query || '';
-	      const queryMatcher = createCommitQueryMatcher(query);
-	      return state.commits.filter((commit) => {
-	        if (queryMatcher && !queryMatcher(commit.subject, commit.hash, commit.shortHash)) {
-	          return false;
-	        }
-	        if (commitFilters.users.size > 0 && !commitFilters.users.has(commit.author)) {
-	          return false;
-	        }
-	        if (commitFilters.branches.size > 0) {
-	          const commitBranches = new Set(commit.branches || []);
-	          const hasBranch = Array.from(commitFilters.branches).some((branch) => commitBranches.has(branch));
-	          if (!hasBranch) {
-	            return false;
-	          }
-	        }
-	        return true;
-	      });
-	    }
-
-	    function createCommitQueryMatcher(query) {
-	      if (!query.trim()) return undefined;
-	      if (commitFilters.regex) {
-	        try {
-	          const flags = commitFilters.matchCase ? '' : 'i';
-	          const pattern = new RegExp(query, flags);
-	          return (subject, hash, shortHash) => pattern.test(subject || '') || pattern.test(hash || '') || pattern.test(shortHash || '');
-	        } catch (_error) {
-	          return () => false;
-	        }
-	      }
-
-	      const needle = commitFilters.matchCase ? query : query.toLowerCase();
-	      return (subject, hash, shortHash) => {
-	        const values = [subject || '', hash || '', shortHash || ''];
-	        return values.some((value) => (commitFilters.matchCase ? value : value.toLowerCase()).includes(needle));
-	      };
 	    }
 
 	    function openBranchContextMenu(event, branchNode) {
@@ -3271,12 +3245,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		    }
 
 		    function selectedHashesInView() {
-		      const visible = filteredCommits().map((commit) => commit.hash);
+		      const visible = state.commits.map((commit) => commit.hash);
 		      return visible.filter((hash) => selectedCommitHashes.has(hash));
 		    }
 
 	    function selectRelatedCommit(hash, direction) {
-	      const commits = filteredCommits();
+	      const commits = state.commits;
 	      const current = commits.find((commit) => commit.hash === hash);
 	      if (!current) return;
 	      const target = direction === 'parent'
@@ -3358,7 +3332,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       if (!branchName) return;
       const target = state.commits.find((commit) => (commit.refs || []).some((ref) => refName(ref) === branchName));
       if (!target) return;
-      if (!filteredCommits().some((commit) => commit.hash === target.hash)) {
+      if (!state.commits.some((commit) => commit.hash === target.hash)) {
         clearAllCommitFilters();
       }
       const row = document.querySelector('[data-hash="' + target.hash + '"]');
@@ -3380,7 +3354,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       persistViewState();
       updateCommitSearchClear();
       updateCommitFilterIndicators();
-      applyCommitFilters();
+      sendCommitFilters();
     }
 
     window.addEventListener('message', (event) => {
