@@ -4,6 +4,7 @@
 
 - Fix the Log View discarding what you were in the middle of when a background refresh landed: an open context menu closed itself after a few seconds, an open Branch or User filter dropdown snapped shut, and a multi-commit selection collapsed to a single commit. The refresh now waits until you are idle. `git.autofetch` rewrites `FETCH_HEAD` on a timer, so this fired constantly.
 - Keep a multi-commit selection across a refresh, so Drop Commits and Squash Commits no longer lose the commits you picked.
+- Fix clearing a commit search throwing away the commit you had selected. The list rebuilt from the newest 300 commits, which usually does not reach a commit found by searching, so the selection was dropped and the view jumped to the top. The log now loads deep enough to keep that commit listed and scrolls to centre it.
 - Send `Compare with Local` and `Compare with <branch>` to the Gitrail Diff view instead of dumping raw `git diff` and `git log` text into an output channel. Every diff and compare action now lands in the same place, as a changed-file tree you can open file by file or Get from.
 - Show commit times the way IntelliJ does: `just now` and `N minutes ago` within the hour, then `Today 15:53`, `Yesterday 22:45`, and `25/7/26, 01:54`. A bare `15:53` left it ambiguous whether the commit was from today. Relative labels retick every 30 seconds.
 

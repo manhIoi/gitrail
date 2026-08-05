@@ -607,6 +607,7 @@ function sortBranchDiffItems(items: BranchDiffTreeItem[]): void {
 
 class GitLogController {
   private static readonly commitPageSize = 300;
+  private static readonly maxSelectedCommitDepth = 5000;
   private selectedBranch: string | undefined;
   private selectedCommit: string | undefined;
   private diffBranch: string | undefined;
@@ -695,6 +696,10 @@ class GitLogController {
         this.commitFilterUsers = new Set(message.users || []);
         this.commitFilterBranches = new Set(message.branches || []);
         this.commitLimit = GitLogController.commitPageSize;
+        // Searching is how you reach an old commit, so the one just picked out of the results
+        // is usually deeper than a fresh page. Rebuilding from the newest page alone would
+        // drop it from the list, and selectVisibleCommit would then clear the selection.
+        this.commitLimit = Math.max(this.commitLimit, await this.depthOfSelectedCommit());
         await this.postCommitsUpdate('filter');
         return;
       }
@@ -1470,6 +1475,31 @@ class GitLogController {
       return this.selectedCommit;
     }
     return undefined;
+  }
+
+  // How deep the log has to run for the selected commit to still be listed. `rev-list ^hash`
+  // counts the commits hash cannot reach, which approximates how many sit above it. It is only
+  // an approximation: that count is ancestry, while the log is sorted by date, and an ancestor
+  // with a skewed clock sorts above hash without being counted. Hence a page of slack. Filters
+  // only ever remove rows, so a limit taken from the unfiltered count is never too small.
+  // Returns 0 when there is nothing to keep on screen.
+  private async depthOfSelectedCommit(): Promise<number> {
+    if (!isCommitHash(this.selectedCommit)) {
+      return 0;
+    }
+    try {
+      const target = this.buildCommitLogTarget();
+      const raw = await this.git.exec(`git rev-list --count ${target} ${shellQuote('^' + this.selectedCommit)}`);
+      const above = Number.parseInt(raw.trim(), 10);
+      if (!Number.isFinite(above)) {
+        return 0;
+      }
+      // Capped: a selection from the very bottom of a long history must not pull in all of it.
+      return Math.min(above + GitLogController.commitPageSize, GitLogController.maxSelectedCommitDepth);
+    } catch {
+      // Not reachable from the current target, so no depth would bring it back.
+      return 0;
+    }
   }
 
   private buildCommitLogTarget(): string {
@@ -3764,6 +3794,19 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       });
     }
 
+    // Centres a commit row in the list. Returns false when that commit is not on the current
+    // page, so the caller can fall back to whatever it does otherwise.
+    function revealCommitRow(hash) {
+      if (!hash) return false;
+      const list = document.getElementById('commits');
+      const row = list && list.querySelector('[data-hash="' + hash + '"]');
+      if (!row) return false;
+      list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 2 + 12);
+      scrollTops.commits = list.scrollTop;
+      persistViewState();
+      return true;
+    }
+
     function goToBranchHead() {
       const branchName = state.selectedBranch || currentBranch;
       if (!branchName) return;
@@ -3773,9 +3816,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         clearAllCommitFilters();
       }
       const row = document.querySelector('[data-hash="' + target.hash + '"]');
-      const list = document.getElementById('commits');
-      if (!row || !list) return;
-      list.scrollTop = Math.max(0, row.offsetTop - list.clientHeight / 2 + 12);
+      if (!row) return;
+      revealCommitRow(target.hash);
       selectCommitRow(row, false);
     }
 
@@ -3832,12 +3874,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           list.style.setProperty('--graph-col', commitsView.graphWidth + 'px');
           list.innerHTML = commitsView.html;
           wireCommitRows();
-          // Replacing innerHTML resets scrollTop to 0. loadMore appends further down
-          // an existing list, so restore where the user was; filter is a new result
-          // set, so start at the top (and persist that reset).
+          // Replacing innerHTML resets scrollTop to 0. loadMore appends further down an
+          // existing list, so restore where the user was. A filter change is a new result set
+          // where the old offset means nothing - but a selected commit is the one row the user
+          // is tracking, so keep it on screen instead of jumping away from it.
           if (message.reason === 'loadMore') {
             list.scrollTop = scrollTops.commits;
-          } else {
+          } else if (!revealCommitRow(state.selectedCommit)) {
             list.scrollTop = 0;
             scrollTops.commits = 0;
             persistViewState();
