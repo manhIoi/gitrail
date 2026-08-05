@@ -55,6 +55,15 @@ type BranchDiff = {
   selectedFile?: string;
 };
 
+// What the Gitrail Diff view is showing. `ref` is the side files are taken from when you
+// Get them. Without `against` the comparison is ref against the working tree; with it the
+// two refs are compared directly, which is what Compare with <branch> needs.
+type DiffTarget = {
+  ref: string;
+  label: string;
+  against?: string;
+};
+
 type ViewState = {
   root: string;
   selectedBranch?: string;
@@ -133,7 +142,7 @@ export async function showGitLogView(context: vscode.ExtensionContext, git: GitR
 }
 
 export async function showBranchDiffWithWorkingTree(_context: vscode.ExtensionContext, _git: GitRunner, branch: string): Promise<void> {
-  await showBranchDiffInScm(branch);
+  await showBranchDiffInScm({ ref: branch, label: `${branch} ↔ Working Tree` });
 }
 
 async function openGitLogPanel(): Promise<void> {
@@ -152,10 +161,10 @@ async function openScmView(): Promise<void> {
   }
 }
 
-async function showBranchDiffInScm(branch: string): Promise<void> {
+async function showBranchDiffInScm(target: DiffTarget): Promise<void> {
   await vscode.commands.executeCommand('setContext', 'giPro.branchDiffVisible', true);
   await openScmView();
-  await currentBranchDiffProvider?.showBranchDiff(branch);
+  await currentBranchDiffProvider?.showDiff(target);
   await vscode.commands.executeCommand(`${branchDiffViewId}.focus`);
 }
 
@@ -345,7 +354,7 @@ function resolveGitDir(rootPath: string): string {
 class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeItem> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<BranchDiffTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
-  private branch: string | undefined;
+  private target: DiffTarget | undefined;
   private selectedFile: string | undefined;
   private rootPath: string | undefined;
   private diff: BranchDiff | undefined;
@@ -357,14 +366,14 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
     this.tree = tree;
   }
 
-  async showBranchDiff(branch: string): Promise<void> {
-    this.branch = branch;
+  async showDiff(target: DiffTarget): Promise<void> {
+    this.target = target;
     this.selectedFile = undefined;
     await this.refresh();
   }
 
   async close(): Promise<void> {
-    this.branch = undefined;
+    this.target = undefined;
     this.selectedFile = undefined;
     this.rootPath = undefined;
     this.diff = undefined;
@@ -381,11 +390,11 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
   }
 
   getChildren(element?: BranchDiffTreeItem): BranchDiffTreeItem[] {
-    if (!this.branch) {
-      return [new BranchDiffMessageItem('Run Show Diff with Working Tree from a branch.')];
+    if (!this.target) {
+      return [new BranchDiffMessageItem('Run a Show Diff or Compare action from the Log View.')];
     }
     if (!this.diff) {
-      return [new BranchDiffMessageItem('Loading branch diff...')];
+      return [new BranchDiffMessageItem('Loading diff...')];
     }
     if (!this.diff.files.length) {
       return [new BranchDiffMessageItem('No changed files')];
@@ -397,7 +406,7 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
   }
 
   async refresh(): Promise<void> {
-    if (!this.branch) {
+    if (!this.target) {
       this.diff = undefined;
       await vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', false);
       this.onDidChangeTreeDataEmitter.fire();
@@ -409,11 +418,11 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
       this.rootPath = root?.fsPath;
       if (!this.rootPath) {
         this.diff = undefined;
-        vscode.window.showErrorMessage('Open a folder before opening branch diff.');
+        vscode.window.showErrorMessage('Open a folder before opening a diff.');
         return;
       }
-      this.diff = await this.loadState(this.branch);
-      this.tree && (this.tree.message = `${this.branch} · ${this.diff.files.length} file${this.diff.files.length === 1 ? '' : 's'}`);
+      this.diff = await this.loadState(this.target);
+      this.tree && (this.tree.message = `${this.target.label} · ${this.diff.files.length} file${this.diff.files.length === 1 ? '' : 's'}`);
       await vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', this.diff.files.length > 0);
       this.onDidChangeTreeDataEmitter.fire();
     } catch (error) {
@@ -422,47 +431,54 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
   }
 
   async openItem(item?: BranchDiffTreeItem): Promise<void> {
-    if (!(item instanceof BranchDiffFileItem) || !this.branch) {
+    if (!(item instanceof BranchDiffFileItem) || !this.target) {
       return;
     }
     this.selectedFile = item.file.path;
-    await this.openBranchDiffFile(this.branch, item.file.path);
+    await this.openDiffFile(this.target, item.file.path);
   }
 
   async getItem(item?: BranchDiffTreeItem): Promise<void> {
-    if (!(item instanceof BranchDiffFileItem) || !this.branch) {
+    if (!(item instanceof BranchDiffFileItem) || !this.target) {
       return;
     }
-    await this.getFileFromBranch(this.branch, item.file.path);
+    await this.getFileFromBranch(this.target.ref, item.file.path);
     await this.refresh();
   }
 
   async getAll(): Promise<void> {
-    if (!this.branch) {
+    if (!this.target) {
       return;
     }
-    await this.getAllDiffFilesFromBranch(this.branch);
+    await this.getAllDiffFilesFromBranch(this.target);
     await this.refresh();
   }
 
-  private async loadState(branch: string): Promise<BranchDiff> {
-    const output = await this.git.exec(`git diff --name-status -M ${shellQuote(branch)} --`);
+  private async loadState(target: DiffTarget): Promise<BranchDiff> {
+    // `git diff A B` reports what changes going from A to B, so the ref files are taken from
+    // goes last. That makes A/D read the same way Get applies them to the working tree.
+    const range = target.against
+      ? `${shellQuote(target.against)} ${shellQuote(target.ref)}`
+      : shellQuote(target.ref);
+    const output = await this.git.exec(`git diff --name-status -M ${range} --`);
     const files = splitLines(output).map(parseChangedFile).filter((file): file is ChangedFile => Boolean(file));
     if (!this.selectedFile || !files.some((file) => file.path === this.selectedFile)) {
       this.selectedFile = files[0]?.path;
     }
-    return { branch, files, selectedFile: this.selectedFile };
+    return { branch: target.ref, files, selectedFile: this.selectedFile };
   }
 
-  private async openBranchDiffFile(branch: string, filePath: string): Promise<void> {
+  private async openDiffFile(target: DiffTarget, filePath: string): Promise<void> {
     if (!this.rootPath) {
       return;
     }
     const fileName = filePath.split('/').pop() || filePath;
-    const query = JSON.stringify({ ref: branch, path: filePath });
-    const branchUri = vscode.Uri.from({ scheme: 'gitpro', path: '/' + fileName, query });
-    const workingTreeUri = vscode.Uri.file(path.join(this.rootPath, filePath));
-    await vscode.commands.executeCommand('vscode.diff', branchUri, workingTreeUri, `${fileName} (${branch} ↔ Working Tree)`);
+    const refUri = (ref: string) =>
+      vscode.Uri.from({ scheme: 'gitpro', path: '/' + fileName, query: JSON.stringify({ ref, path: filePath }) });
+    // Left is the side being compared from, mirroring the argument order given to git diff.
+    const left = target.against ? refUri(target.against) : refUri(target.ref);
+    const right = target.against ? refUri(target.ref) : vscode.Uri.file(path.join(this.rootPath, filePath));
+    await vscode.commands.executeCommand('vscode.diff', left, right, `${fileName} (${target.label})`);
   }
 
   private async getFileFromBranch(branch: string, filePath: string): Promise<void> {
@@ -483,10 +499,11 @@ class BranchDiffTreeProvider implements vscode.TreeDataProvider<BranchDiffTreeIt
     }
   }
 
-  private async getAllDiffFilesFromBranch(branch: string): Promise<void> {
-    const diff = await this.loadState(branch);
+  private async getAllDiffFilesFromBranch(target: DiffTarget): Promise<void> {
+    const branch = target.ref;
+    const diff = await this.loadState(target);
     if (!diff.files.length) {
-      vscode.window.showInformationMessage('No files to get from branch.');
+      vscode.window.showInformationMessage(`No files to get from ${branch}.`);
       return;
     }
 
@@ -798,7 +815,7 @@ class GitLogController {
         await this.showGitOutput(`git show --stat --decorate ${hash}`, `Repository at ${hash.slice(0, 8)}`);
         return;
       case 'compareWithLocal':
-        await this.showGitOutput(`git diff ${hash}`, `Diff with ${hash.slice(0, 8)}`);
+        await showBranchDiffInScm({ ref: hash, label: `${hash.slice(0, 8)} ↔ Working Tree` });
         return;
       case 'resetCurrentBranchHere':
         await this.resetCurrentBranchTo(hash);
@@ -863,11 +880,11 @@ class GitLogController {
         return;
       case 'compareWithCurrent':
         if (currentBranch) {
-          await this.showGitOutput(`git log --left-right --cherry-pick --oneline ${shellQuote(currentBranch)}...${shellQuote(branch)}`, `Compare ${currentBranch}...${branch}`);
+          await showBranchDiffInScm({ ref: branch, label: `${currentBranch} ↔ ${branch}`, against: currentBranch });
         }
         return;
       case 'diffWithWorkingTree':
-        await showBranchDiffInScm(branch);
+        await showBranchDiffInScm({ ref: branch, label: `${branch} ↔ Working Tree` });
         return;
       case 'rebaseCurrentOnto':
         await this.runGitAction(`git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');

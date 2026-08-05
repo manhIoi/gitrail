@@ -5,6 +5,7 @@
 - Fix the Log View discarding what you were in the middle of when a background refresh landed: an open context menu closed itself after a few seconds, an open Branch or User filter dropdown snapped shut, and a multi-commit selection collapsed to a single commit. The refresh now waits until you are idle. `git.autofetch` rewrites `FETCH_HEAD` on a timer, so this fired constantly.
 - Keep a multi-commit selection across a refresh, so Drop Commits and Squash Commits no longer lose the commits you picked.
 - Remove the duplicate `Focus on Log View`, `Focus on History View`, and `Focus on Gitrail Diff View` entries that VS Code generates automatically. Use `Gitrail: Open Log View`, which also reveals the panel and reloads the log.
+- Send `Compare with Local` and `Compare with <branch>` to the Gitrail Diff view instead of dumping raw `git diff` and `git log` text into an output channel. Every diff and compare action now lands in the same place, as a changed-file tree you can open file by file or Get from.
 - Show commit times the way IntelliJ does: `just now` and `N minutes ago` within the hour, then `Today 15:53`, `Yesterday 22:45`, and `25/7/26, 01:54`. A bare `15:53` left it ambiguous whether the commit was from today. Relative labels retick every 30 seconds.
 
 ## 0.1.0
