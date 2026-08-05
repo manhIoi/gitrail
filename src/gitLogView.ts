@@ -1446,7 +1446,10 @@ class GitLogController {
 
   private async loadBranches(): Promise<Branch[]> {
     const local = await this.git.exec("git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%09%(objectname)' refs/heads");
-    const remote = await this.git.exec('git branch -r --format="%(refname:short)%09%(objectname)"');
+    // refs/remotes/origin/HEAD shortens to plain "origin", which then shows up as a phantom
+    // branch duplicating whatever it points at. It is a symbolic ref, so filter on that rather
+    // than on the name: the old check looked for "HEAD ->" text, which --format never emits.
+    const remote = await this.git.exec("git for-each-ref --format='%(refname)%09%(symref)%09%(objectname)' refs/remotes");
     const branches: Branch[] = [];
 
     for (const line of splitLines(local)) {
@@ -1464,11 +1467,14 @@ class GitLogController {
     }
 
     for (const line of splitLines(remote)) {
-      const [rawName, tip] = line.split('\t');
-      const name = (rawName || '').trim();
-      if (name && !name.includes('HEAD ->')) {
-        branches.push({ name, type: 'remote', current: false, tip: (tip || '').trim() || undefined });
+      const [refname, symref, tip] = line.split('\t');
+      const name = (refname || '').replace(/^refs\/remotes\//, '').trim();
+      // Skip the remote's default-branch pointer: symbolic normally, but also guard the name in
+      // case someone has left a real ref sitting at refs/remotes/<remote>/HEAD.
+      if (!name || symref || name.endsWith('/HEAD')) {
+        continue;
       }
+      branches.push({ name, type: 'remote', current: false, tip: (tip || '').trim() || undefined });
     }
 
     return branches;
