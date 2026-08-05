@@ -285,18 +285,6 @@
         {
           "command": "giPro.branchDiff.openFile",
           "when": "false"
-        },
-        {
-          "command": "giPro.logView.focus",
-          "when": "false"
-        },
-        {
-          "command": "giPro.historyView.focus",
-          "when": "false"
-        },
-        {
-          "command": "giPro.branchDiffView.focus",
-          "when": "false"
         }
       ]
     },
