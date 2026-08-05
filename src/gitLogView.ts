@@ -2599,10 +2599,28 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       const hh = String(d.getHours()).padStart(2, '0');
       const mm = String(d.getMinutes()).padStart(2, '0');
       const time = hh + ':' + mm;
-      if (diff <= 0) return time;
-      if (diff === 1) return 'yesterday ' + time;
-      if (diff <= 3) return diff + ' days ' + time;
-      return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2) + ' ' + time;
+      const minutesAgo = Math.floor((now.getTime() - d.getTime()) / 60000);
+      // Within the hour a clock time makes the reader do the subtraction, so say it outright.
+      // Anything older reads better as a fixed point in time than as a growing count.
+      if (diff <= 0 && minutesAgo >= 0 && minutesAgo < 60) {
+        if (minutesAgo < 1) return 'just now';
+        return minutesAgo === 1 ? '1 minute ago' : minutesAgo + ' minutes ago';
+      }
+      if (diff <= 0) return 'Today ' + time;
+      if (diff === 1) return 'Yesterday ' + time;
+      return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2) + ', ' + time;
+    }
+
+    // "N minutes ago" would sit frozen now that refreshes wait for the user to be idle, so
+    // retick it here. Only the text of the date cells is rewritten: replacing the list's
+    // innerHTML would close an open context menu, which is the bug this release fixes.
+    function startRelativeTimeTicker() {
+      setInterval(() => {
+        document.querySelectorAll('.date[data-date]').forEach((node) => {
+          const next = formatDate(node.dataset.date);
+          if (node.textContent !== next) node.textContent = next;
+        });
+      }, 30000);
     }
 
     function formatDetailDate(isoStr) {
@@ -3024,7 +3042,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           '<div class="graph-cell"></div>' +
           '<div class="subject"><span class="subject-text">' + html(commit.subject) + '</span>' + refLabels(commit.refs) + commitBranchHint(commit) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
-          '<div class="date">' + html(formatDate(commit.date)) + '</div>' +
+          '<div class="date" data-date="' + html(commit.date) + '">' + html(formatDate(commit.date)) + '</div>' +
 	        '</div>';
 	      });
 	      return { html: graph.html + rows, graphWidth: graph.width };
@@ -3829,6 +3847,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     });
 
     render();
+    startRelativeTimeTicker();
   </script>
 </body>
 </html>`;
