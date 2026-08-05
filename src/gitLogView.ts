@@ -9,6 +9,9 @@ type Branch = {
   name: string;
   type: 'local' | 'remote';
   current: boolean;
+  // Tip commit. Only used to key the branch-membership cache; absent if the ref could not be
+  // read, which disables that cache rather than risking a stale answer.
+  tip?: string;
   upstream?: string;
   tracking?: BranchTrackingStatus;
 };
@@ -608,6 +611,8 @@ function sortBranchDiffItems(items: BranchDiffTreeItem[]): void {
 class GitLogController {
   private static readonly commitPageSize = 300;
   private static readonly maxSelectedCommitDepth = 5000;
+  private branchMembershipCache: { key: string; depth: number; map: Map<string, string[]> } | undefined;
+  private commitsUpdateSeq = 0;
   private selectedBranch: string | undefined;
   private selectedCommit: string | undefined;
   private diffBranch: string | undefined;
@@ -638,9 +643,17 @@ class GitLogController {
   // webview whether to keep the current scroll position (loadMore, appending further
   // down the list) or reset it to the top (filter, a new result set).
   private async postCommitsUpdate(reason: 'loadMore' | 'filter'): Promise<void> {
+    // Messages are handled fire-and-forget, so pausing mid-word for longer than the debounce
+    // leaves two of these runs in flight. Only the newest may be applied, and the guard has to
+    // cover the assignment below as much as the message: letting a superseded run recompute
+    // selectedCommit from its own commit list is exactly how a selection gets dropped.
+    const seq = ++this.commitsUpdateSeq;
     try {
       const branches = await this.loadBranches();
       const { commits, hasMoreCommits } = await this.loadCommits(branches);
+      if (seq !== this.commitsUpdateSeq) {
+        return;
+      }
       this.selectedCommit = this.selectVisibleCommit(commits);
       await this.webview.postMessage({
         type: 'commitsUpdated',
@@ -650,6 +663,9 @@ class GitLogController {
         selectedCommit: this.selectedCommit
       });
     } catch (error) {
+      if (seq !== this.commitsUpdateSeq) {
+        return;
+      }
       await this.webview.postMessage({
         type: 'commitsUpdated',
         reason,
@@ -1429,17 +1445,18 @@ class GitLogController {
   }
 
   private async loadBranches(): Promise<Branch[]> {
-    const local = await this.git.exec("git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)' refs/heads");
-    const remote = await this.git.exec('git branch -r --format="%(refname:short)"');
+    const local = await this.git.exec("git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%09%(objectname)' refs/heads");
+    const remote = await this.git.exec('git branch -r --format="%(refname:short)%09%(objectname)"');
     const branches: Branch[] = [];
 
     for (const line of splitLines(local)) {
-      const [name, head, upstream, trackingText] = line.split('\t');
+      const [name, head, upstream, trackingText, tip] = line.split('\t');
       if (name) {
         branches.push({
           name,
           type: 'local',
           current: head === '*',
+          tip: tip || undefined,
           upstream: upstream || undefined,
           tracking: parseTrackingStatus(trackingText)
         });
@@ -1447,9 +1464,10 @@ class GitLogController {
     }
 
     for (const line of splitLines(remote)) {
-      const name = line.trim();
+      const [rawName, tip] = line.split('\t');
+      const name = (rawName || '').trim();
       if (name && !name.includes('HEAD ->')) {
-        branches.push({ name, type: 'remote', current: false });
+        branches.push({ name, type: 'remote', current: false, tip: (tip || '').trim() || undefined });
       }
     }
 
@@ -1576,25 +1594,66 @@ class GitLogController {
   }
 
   private async assignCommitBranches(commits: Commit[], branches: Branch[]): Promise<void> {
-    const commitsByHash = new Map(commits.map((commit) => [commit.hash, commit]));
-    if (!commitsByHash.size) {
+    if (!commits.length) {
       return;
     }
 
-    await Promise.all(branches.map(async (branch) => {
+    const membership = await this.branchMembership(branches);
+    for (const commit of commits) {
+      const names = membership.get(commit.hash);
+      if (names) {
+        // Branch order, not rev-list completion order, so the hint on a row does not reshuffle
+        // between renders.
+        commit.branches.push(...names);
+      }
+    }
+  }
+
+  // Which branches contain which commits. This was around 60% of the cost of applying a
+  // commit filter - one rev-list per branch, every keystroke - while typing in the search box
+  // moves no branch tip at all. rev-list from a fixed tip is immutable in git, so caching on
+  // the tips plus the depth is exact rather than a guess: the same inputs cannot produce a
+  // different answer. A branch whose tip could not be read disables the cache, and a failed
+  // rev-list is not cached either, so a ref deleted mid-refresh is retried rather than
+  // remembered as absent.
+  private async branchMembership(branches: Branch[]): Promise<Map<string, string[]>> {
+    const depth = Math.max(1000, this.commitLimit);
+    const keyable = branches.every((branch) => Boolean(branch.tip));
+    const key = branches.map((branch) => `${branch.name}@${branch.tip}`).join('\n');
+    const cached = this.branchMembershipCache;
+    if (keyable && cached && cached.key === key && cached.depth >= depth) {
+      return cached.map;
+    }
+
+    const lists = await Promise.all(branches.map(async (branch) => {
       try {
-        const branchCommitLimit = Math.max(1000, this.commitLimit);
-        const output = await this.git.exec(`git rev-list -n ${branchCommitLimit} ${shellQuote(branch.name)}`);
-        for (const hash of splitLines(output)) {
-          const commit = commitsByHash.get(hash);
-          if (commit) {
-            commit.branches.push(branch.name);
-          }
-        }
+        const output = await this.git.exec(`git rev-list -n ${depth} ${shellQuote(branch.name)}`);
+        return { name: branch.name, hashes: splitLines(output) };
       } catch {
-        // Ignore deleted or otherwise unreadable refs during a refresh.
+        // Deleted or otherwise unreadable ref during a refresh.
+        return undefined;
       }
     }));
+
+    const map = new Map<string, string[]>();
+    for (const list of lists) {
+      if (!list) {
+        continue;
+      }
+      for (const hash of list.hashes) {
+        const names = map.get(hash);
+        if (names) {
+          names.push(list.name);
+        } else {
+          map.set(hash, [list.name]);
+        }
+      }
+    }
+
+    if (keyable && lists.every(Boolean)) {
+      this.branchMembershipCache = { key, depth, map };
+    }
+    return map;
   }
 
   private async loadCommitDetail(hash: string): Promise<CommitDetail> {
