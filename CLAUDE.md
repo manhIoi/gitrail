@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A VS Code extension that replicates GI Pro Git workflows. It ships 15 commands under the `GI Pro` category and a full-screen webview Git Log panel.
+A VS Code extension that replicates GI Pro Git workflows. Published as **Gitlane** (`<publisher>.gitlane`); it ships its commands under the `Gitlane` category and a full-screen webview Git Log panel.
+
+Note: `giPro.*` command IDs, configuration keys, and view IDs are unchanged internal identifiers — only user-facing strings were renamed to Gitlane.
 
 ## Commands
 

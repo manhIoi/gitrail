@@ -1,5 +1,7 @@
 .vscode/**
 .claude/**
+.superpowers/**
+docs/**
 .gitignore
 CLAUDE.md
 src/**
@@ -9,5 +11,3 @@ node_modules/**
 *.vsix
 dist/**/*.map
 media/icon.svg
-media/icon-source.png
-media/publisher-logo.png

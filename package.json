@@ -1,8 +1,8 @@
 {
-  "name": "gi-pro",
-  "displayName": "GI Pro",
-  "description": "Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
-  "version": "0.0.5",
+  "name": "gitlane",
+  "displayName": "Gitlane — Visual Git Log",
+  "description": "Successor to GI Pro. Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
+  "version": "0.1.0",
   "publisher": "iammanhloi",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -27,7 +27,11 @@
     "file history",
     "inline blame",
     "cherry-pick",
-    "rebase"
+    "rebase",
+    "gi pro",
+    "gipro",
+    "git graph",
+    "git history"
   ],
   "galleryBanner": {
     "color": "#1f6feb",
@@ -62,123 +66,123 @@
       {
         "command": "giPro.smartCommit",
         "title": "Smart Commit",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.fetch",
         "title": "Fetch All",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.pullRebase",
         "title": "Pull with Rebase",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.push",
         "title": "Push",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.forcePushLease",
         "title": "Force Push with Lease",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.amendNoEdit",
         "title": "Amend Commit Without Editing Message",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.interactiveRebase",
         "title": "Interactive Rebase",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.abortGitOperation",
         "title": "Abort",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.stash",
         "title": "Stash Changes",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.stashPop",
         "title": "Pop Stash",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.checkoutBranch",
         "title": "Checkout Branch",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.branches",
         "title": "Branches",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.compareFileWithHead",
         "title": "Compare File with HEAD",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.showFileHistory",
         "title": "Show File History",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.showHistoryForSelection",
         "title": "Show History for Selection",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.openGitLogView",
         "title": "Open Log View",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.cherryPick",
         "title": "Cherry-pick Commit",
-        "category": "GI Pro"
+        "category": "Gitlane"
       },
       {
         "command": "giPro.branchDiff.refresh",
         "title": "Refresh",
-        "category": "GI Pro",
+        "category": "Gitlane",
         "icon": "$(refresh)"
       },
       {
         "command": "giPro.branchDiff.getAll",
         "title": "Get All",
-        "category": "GI Pro",
+        "category": "Gitlane",
         "icon": "$(cloud-download)"
       },
       {
         "command": "giPro.branchDiff.getFile",
         "title": "Get",
-        "category": "GI Pro",
+        "category": "Gitlane",
         "icon": "$(cloud-download)"
       },
       {
         "command": "giPro.branchDiff.close",
         "title": "Close Diff",
-        "category": "GI Pro",
+        "category": "Gitlane",
         "icon": "$(close)"
       },
       {
         "command": "giPro.branchDiff.openFile",
         "title": "Open Diff",
-        "category": "GI Pro"
+        "category": "Gitlane"
       }
     ],
     "viewsContainers": {
       "panel": [
         {
           "id": "giProPanel",
-          "title": "GI Pro",
+          "title": "Gitlane",
           "icon": "media/git-log.svg"
         },
         {
@@ -207,7 +211,7 @@
       "scm": [
         {
           "id": "giPro.branchDiffView",
-          "name": "GI Pro Diff",
+          "name": "Gitlane Diff",
           "when": "giPro.branchDiffVisible"
         }
       ]
@@ -285,11 +289,11 @@
       ]
     },
     "configuration": {
-      "title": "GI Pro",
+      "title": "Gitlane",
       "properties": {
         "giPro.terminalName": {
           "type": "string",
-          "default": "GI Pro",
+          "default": "Gitlane",
           "description": "Terminal name used to run Git commands."
         },
         "giPro.smartCommitPushAfterCommit": {
