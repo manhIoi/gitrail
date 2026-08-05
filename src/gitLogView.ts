@@ -82,6 +82,7 @@ type WebviewMessage = {
   users?: string[];
   branches?: string[];
   focused?: boolean;
+  open?: boolean;
 };
 
 const RESET_MODES = [
@@ -166,6 +167,7 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private needsRefresh = false;
   private inputFocused = false;
+  private overlayOpen = false;
   private blurTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly git: GitRunner) {}
@@ -182,7 +184,7 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     this.controller = new GitLogController(this.git, webviewView.webview, root.fsPath);
     currentController = this.controller;
     webviewView.webview.onDidReceiveMessage((message: unknown) => {
-      if (this.handleInputFocus(message)) {
+      if (this.handleInteraction(message)) {
         return;
       }
       void this.controller?.handleMessage(message);
@@ -190,9 +192,10 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     this.watchRepository(root.fsPath);
     webviewView.onDidChangeVisibility(() => {
       if (!webviewView.visible) {
-        // Nothing can hold focus in a hidden view; clear it so a deferred refresh is
-        // never stranded waiting for a blur that will not arrive.
+        // A hidden view holds neither focus nor an open menu; clear both so a deferred
+        // refresh is never stranded waiting for a close that will not arrive.
         this.inputFocused = false;
+        this.overlayOpen = false;
         return;
       }
       if (this.needsRefresh) {
@@ -246,33 +249,47 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // Returns true when the message was a focus notification and needs no further handling.
-  private handleInputFocus(raw: unknown): boolean {
+  // Anything the user is in the middle of that a re-render would throw away. render()
+  // replaces webview.html outright, so every one of these lives only in the DOM.
+  private get interactionActive(): boolean {
+    return this.inputFocused || this.overlayOpen;
+  }
+
+  // Returns true when the message was an interaction notification and needs no further handling.
+  private handleInteraction(raw: unknown): boolean {
     const message = raw as WebviewMessage;
-    if (message?.type !== 'inputFocus') {
+    if (message?.type === 'inputFocus') {
+      this.inputFocused = Boolean(message.focused);
+    } else if (message?.type === 'overlayState') {
+      this.overlayOpen = Boolean(message.open);
+    } else {
       return false;
     }
 
+    this.flushWhenIdle();
+    return true;
+  }
+
+  private flushWhenIdle(): void {
     if (this.blurTimer) {
       clearTimeout(this.blurTimer);
       this.blurTimer = undefined;
     }
 
-    this.inputFocused = Boolean(message.focused);
-    if (this.inputFocused || !this.needsRefresh) {
-      return true;
+    if (this.interactionActive || !this.needsRefresh) {
+      return;
     }
 
-    // Tabbing between two inputs fires focusout before the next focusin, so wait a beat
-    // before flushing - otherwise the deferred render lands mid-hop and blurs anyway.
+    // Tabbing between two inputs fires focusout before the next focusin, and closing one
+    // menu to open another reports closed before open, so wait a beat before flushing -
+    // otherwise the deferred render lands mid-hop and destroys the DOM anyway.
     this.blurTimer = setTimeout(() => {
       this.blurTimer = undefined;
-      if (!this.inputFocused && this.needsRefresh) {
+      if (!this.interactionActive && this.needsRefresh) {
         this.needsRefresh = false;
         void this.controller?.render();
       }
     }, 150);
-    return true;
   }
 
   private scheduleRefresh(): void {
@@ -281,10 +298,11 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      // render() replaces webview.html outright, which destroys the DOM and drops focus
-      // mid-keystroke. git.autofetch rewrites FETCH_HEAD on a short interval, so this
-      // watcher fires constantly - hold the refresh until the input is blurred.
-      if (this.view?.visible && !this.inputFocused) {
+      // render() replaces webview.html outright, which destroys the DOM: focus goes
+      // mid-keystroke, an open context menu vanishes, a multi-commit selection collapses.
+      // git.autofetch rewrites FETCH_HEAD on a short interval, so this watcher fires
+      // constantly - hold the refresh until the user is not in the middle of something.
+      if (this.view?.visible && !this.interactionActive) {
         void this.controller?.render();
       } else {
         this.needsRefresh = true;
@@ -2501,10 +2519,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      commits: persistedViewState.scrollTops?.commits || 0,
 	      files: persistedViewState.scrollTops?.files || 0
 	    };
-	    const selectedCommitHashes = new Set(state.selectedCommit ? [state.selectedCommit] : []);
-	    let lastSelectedCommitHash = state.selectedCommit;
+	    // A multi-commit selection is what Drop Commits and Squash Commits operate on, and it
+	    // lives only in the DOM, so restore it across a re-render. Drop hashes that are no
+	    // longer listed: a branch switch or a filter change must not carry a stale selection.
+	    const selectedCommitHashes = new Set(
+	      (persistedViewState.selectedCommits || []).filter((hash) => state.commits.some((commit) => commit.hash === hash))
+	    );
+	    if (!selectedCommitHashes.size && state.selectedCommit) {
+	      selectedCommitHashes.add(state.selectedCommit);
+	    }
+	    let lastSelectedCommitHash = selectedCommitHashes.has(persistedViewState.lastSelectedCommit)
+	      ? persistedViewState.lastSelectedCommit
+	      : state.selectedCommit;
 	    let loadingMoreCommits = false;
 	    let commitFilterDebounce;
+	    let lastReportedOverlayOpen = false;
 
 	    function sendCommitFilters() {
 	      showCommitsSearching();
@@ -2542,7 +2571,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          users: Array.from(commitFilters.users)
 	        },
 	        paneSizes,
-	        scrollTops
+	        scrollTops,
+	        selectedCommits: Array.from(selectedCommitHashes),
+	        lastSelectedCommit: lastSelectedCommitHash
 	      });
 	    }
 
@@ -3307,6 +3338,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 		      document.querySelectorAll('[data-hash]').forEach((node) => {
 		        node.classList.toggle('active', selectedCommitHashes.has(node.dataset.hash));
 		      });
+		      persistViewState();
 		    }
 
 	    function wireActions() {
@@ -3422,6 +3454,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          const wasOpen = dropdown.classList.contains('open');
 	          closeFilterDropdowns();
 	          dropdown.classList.toggle('open', !wasOpen);
+	          reportOverlayState();
 	        });
 	      });
 
@@ -3477,6 +3510,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
 	    function closeFilterDropdowns() {
 	      document.querySelectorAll('[data-filter-dropdown]').forEach((node) => node.classList.remove('open'));
+	      reportOverlayState();
 	    }
 
 	    function filterDropdownOptions(input) {
@@ -3544,6 +3578,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
       menu.hidden = false;
 	      positionContextMenu(menu, event.clientX, event.clientY);
+	      reportOverlayState();
 	    }
 
 		    function openCommitContextMenu(event, commitNode) {
@@ -3589,6 +3624,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 
 	      menu.hidden = false;
 		      positionContextMenu(menu, event.clientX, event.clientY);
+		      reportOverlayState();
 		    }
 
 		    function selectedHashesInView() {
@@ -3624,6 +3660,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        menu.hidden = true;
 	        menu.innerHTML = '';
 	      }
+	      reportOverlayState();
 	    }
 
 	    function closeCommitContextMenu() {
@@ -3632,6 +3669,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        menu.hidden = true;
 	        menu.innerHTML = '';
 	      }
+	      reportOverlayState();
+	    }
+
+	    // A background refresh replaces the whole document, so the extension holds it back
+	    // while an overlay is open. Read the answer off the DOM instead of tracking a flag:
+	    // closing one menu to open another would otherwise leave the flag stale.
+	    function reportOverlayState() {
+	      const menuOpen = ['branchContextMenu', 'commitContextMenu'].some((id) => {
+	        const node = document.getElementById(id);
+	        return node && !node.hidden;
+	      });
+	      const open = menuOpen || Boolean(document.querySelector('[data-filter-dropdown].open'));
+	      if (open === lastReportedOverlayOpen) return;
+	      lastReportedOverlayOpen = open;
+	      send({ type: 'overlayState', open });
 	    }
 
     function toggleFolder(folder) {

@@ -2,7 +2,7 @@
   "name": "gitrail",
   "displayName": "Gitrail — Visual Git Log",
   "description": "Successor to GI Pro. Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "manhloi",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -284,6 +284,18 @@
         },
         {
           "command": "giPro.branchDiff.openFile",
+          "when": "false"
+        },
+        {
+          "command": "giPro.logView.focus",
+          "when": "false"
+        },
+        {
+          "command": "giPro.historyView.focus",
+          "when": "false"
+        },
+        {
+          "command": "giPro.branchDiffView.focus",
           "when": "false"
         }
       ]

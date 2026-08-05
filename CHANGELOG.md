@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Fix the Log View discarding what you were in the middle of when a background refresh landed: an open context menu closed itself after a few seconds, an open Branch or User filter dropdown snapped shut, and a multi-commit selection collapsed to a single commit. The refresh now waits until you are idle. `git.autofetch` rewrites `FETCH_HEAD` on a timer, so this fired constantly.
+- Keep a multi-commit selection across a refresh, so Drop Commits and Squash Commits no longer lose the commits you picked.
+- Remove the duplicate `Focus on Log View`, `Focus on History View`, and `Focus on Gitrail Diff View` entries that VS Code generates automatically. Use `Gitrail: Open Log View`, which also reveals the panel and reloads the log.
+
 ## 0.1.0
 
 **Renamed from GI Pro to Gitrail**, published under a new publisher. GI Pro is no longer
