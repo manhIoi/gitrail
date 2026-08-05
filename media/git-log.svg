@@ -1,8 +1,10 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M7 5.5v13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-  <path d="M17 18.5V8.2H10.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M12.4 5.7 9.7 8.2l2.7 2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="7" cy="5.5" r="2.4" fill="currentColor"/>
-  <circle cx="7" cy="18.5" r="2.4" fill="currentColor"/>
-  <circle cx="17" cy="18.5" r="2.4" fill="currentColor"/>
+  <!-- Monochrome panel/activity-bar mark. Same fork motif as media/icon.svg, but
+       currentColor only so VS Code can theme it. -->
+  <path d="M8 4.5V19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M8 12C11.5 12 16 10.6 16 6.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="8" cy="4.5" r="2.2" fill="currentColor"/>
+  <circle cx="8" cy="12" r="2.2" fill="currentColor"/>
+  <circle cx="8" cy="19.5" r="2.2" fill="currentColor"/>
+  <circle cx="16" cy="6" r="2.2" fill="currentColor"/>
 </svg>

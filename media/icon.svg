@@ -1,0 +1,22 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#232a3a"/>
+      <stop offset="1" stop-color="#0f131b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+
+  <g stroke-width="15" stroke-linecap="round" fill="none">
+    <!-- main branch: three commits, read top to bottom -->
+    <path d="M76 52V204" stroke="#58a6ff"/>
+    <!-- feature branch: forks off the middle commit -->
+    <path d="M76 128C130 128 172 116 172 80" stroke="#3fb950"/>
+  </g>
+
+  <circle cx="76" cy="52" r="17" fill="#58a6ff"/>
+  <circle cx="76" cy="128" r="17" fill="#58a6ff"/>
+  <circle cx="76" cy="204" r="17" fill="#58a6ff"/>
+  <circle cx="172" cy="76" r="17" fill="#3fb950"/>
+</svg>
