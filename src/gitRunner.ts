@@ -15,14 +15,23 @@ export class GitRunner {
     terminal.sendText(command);
   }
 
-  async exec(command: string): Promise<string> {
+  // `env` is merged over the inherited environment; history-rewriting callers use it to
+  // point GIT_SEQUENCE_EDITOR at the bundled rebase editor.
+  async exec(command: string, env?: NodeJS.ProcessEnv): Promise<string> {
     const root = await this.getWorkspaceRoot();
     if (!root) {
       throw new Error('No workspace folder is open.');
     }
 
+    const options: cp.ExecOptionsWithStringEncoding = {
+      cwd: root.fsPath,
+      maxBuffer: 1024 * 1024 * 10,
+      encoding: 'utf8',
+      ...(env ? { env: { ...process.env, ...env } } : {})
+    };
+
     return new Promise((resolve, reject) => {
-      cp.exec(command, { cwd: root.fsPath, maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+      cp.exec(command, options, (error, stdout, stderr) => {
         if (error) {
           reject(new Error(stderr.trim() || error.message));
           return;
@@ -61,7 +70,7 @@ export class GitRunner {
     }
 
     const config = vscode.workspace.getConfiguration('giPro');
-    const name = config.get<string>('terminalName', 'GI Pro');
+    const name = config.get<string>('terminalName', 'Gitlane');
     this.terminal = vscode.window.createTerminal({
       name,
       cwd: root.fsPath

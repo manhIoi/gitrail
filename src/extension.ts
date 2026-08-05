@@ -4,6 +4,7 @@ import { showBranchDiffWithWorkingTree, showGitLogView, GitProContentProvider, r
 import { GitRunner, shellQuote } from './gitRunner';
 import { registerHistoryView, showFileHistoryView, showSelectionHistoryView } from './historyView';
 import { registerInlineBlame } from './inlineBlame';
+import { mergeCommand, pickMergeOptions } from './mergeOptions';
 
 type Command = {
   id: string;
@@ -41,15 +42,22 @@ type BranchActionItem = vscode.QuickPickItem & {
 
 let gitOutputChannel: vscode.OutputChannel | undefined;
 
+// Gitlane was published as GI Pro under a publisher that is no longer reachable. The two
+// are separate extensions to the Marketplace, so GI Pro never auto-updates away and both
+// can end up installed - which registers every giPro.* command twice.
+const legacyExtensionId = 'iammanhloi.gi-pro';
+const legacyNoticeDismissedKey = 'gitlane.legacyNoticeDismissed';
+
 export function activate(context: vscode.ExtensionContext): void {
   const git = new GitRunner();
-  gitOutputChannel = vscode.window.createOutputChannel('GI Pro Git');
+  gitOutputChannel = vscode.window.createOutputChannel('Gitlane Git');
   context.subscriptions.push(gitOutputChannel);
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('gitpro', new GitProContentProvider(git)));
   registerGitLogView(context, git);
   registerHistoryView(context);
   registerInlineBlame(context);
   registerAbortContextRefresh(context, git);
+  void warnAboutLegacyExtension(context);
 
   const commands: Command[] = [
     { id: 'giPro.smartCommit', handler: () => smartCommit(git) },
@@ -80,6 +88,46 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   // Nothing to dispose outside VS Code subscriptions.
+}
+
+async function warnAboutLegacyExtension(context: vscode.ExtensionContext): Promise<void> {
+  if (context.globalState.get<boolean>(legacyNoticeDismissedKey)) {
+    return;
+  }
+  if (!vscode.extensions.getExtension(legacyExtensionId)) {
+    return;
+  }
+
+  const uninstall = 'Uninstall GI Pro';
+  const dismiss = "Don't show again";
+  const answer = await vscode.window.showWarningMessage(
+    'GI Pro is still installed. Gitlane replaces it, and running both registers every command twice.',
+    uninstall,
+    dismiss
+  );
+
+  if (answer === dismiss) {
+    await context.globalState.update(legacyNoticeDismissedKey, true);
+    return;
+  }
+  if (answer !== uninstall) {
+    return;
+  }
+
+  try {
+    await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', legacyExtensionId);
+    // The old extension stays loaded until the window reloads, so the duplicate commands
+    // remain visible until then.
+    const reload = 'Reload Window';
+    const choice = await vscode.window.showInformationMessage('GI Pro uninstalled. Reload to finish.', reload);
+    if (choice === reload) {
+      await vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Could not uninstall GI Pro automatically: ${error instanceof Error ? error.message : String(error)}. Remove it from the Extensions view.`
+    );
+  }
 }
 
 async function smartCommit(git: GitRunner): Promise<void> {
@@ -422,9 +470,14 @@ async function showBranchActions(
     case 'rebaseCurrentOnto':
       await execGitAction(git, `git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
       return;
-    case 'mergeIntoCurrent':
-      await execGitAction(git, `git merge --no-ff ${shellQuote(branch)}`, 'Merge completed.');
+    case 'mergeIntoCurrent': {
+      const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
+      if (!flags) {
+        return;
+      }
+      await execGitAction(git, mergeCommand(shellQuote(branch), flags), 'Merge completed.');
       return;
+    }
     case 'update':
       await updateSelectedBranch(git, branch, branchType, currentBranch);
       return;
@@ -697,7 +750,7 @@ async function safeExec(git: GitRunner, command: string): Promise<string | undef
 async function execGitAction(git: GitRunner, command: string, successMessage: string, progressTitle?: string): Promise<void> {
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: progressTitle ?? `GI Pro: ${command}` },
+      { location: vscode.ProgressLocation.Notification, title: progressTitle ?? `Gitlane: ${command}` },
       () => git.exec(command)
     );
     vscode.window.showInformationMessage(successMessage);
@@ -718,7 +771,7 @@ async function showGitOutput(git: GitRunner, command: string, title: string): Pr
     channel.appendLine('');
     channel.appendLine(output || '(no output)');
     channel.show(true);
-    vscode.window.showInformationMessage(`${title} opened in GI Pro Git output.`);
+    vscode.window.showInformationMessage(`${title} opened in Gitlane Git output.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(message);
@@ -727,7 +780,7 @@ async function showGitOutput(git: GitRunner, command: string, title: string): Pr
 
 function getGitOutputChannel(): vscode.OutputChannel {
   if (!gitOutputChannel) {
-    gitOutputChannel = vscode.window.createOutputChannel('GI Pro Git');
+    gitOutputChannel = vscode.window.createOutputChannel('Gitlane Git');
   }
   return gitOutputChannel;
 }

@@ -1,7 +1,9 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { GitRunner, shellQuote } from './gitRunner';
+import { mergeCommand, pickMergeOptions } from './mergeOptions';
 
 type Branch = {
   name: string;
@@ -79,8 +81,17 @@ type WebviewMessage = {
   regex?: boolean;
   users?: string[];
   branches?: string[];
+  focused?: boolean;
 };
 
+const RESET_MODES = [
+  { mode: 'soft', label: 'Soft', detail: "Files won't change, differences will be staged for commit." },
+  { mode: 'mixed', label: 'Mixed', detail: "Files won't change, differences won't be staged." },
+  { mode: 'hard', label: 'Hard', detail: 'Files will be reverted to the state of the selected commit. Any local changes will be lost.' },
+  { mode: 'keep', label: 'Keep', detail: 'Files will be reverted to the state of the selected commit, but local changes will be kept intact.' }
+] as const;
+
+let extensionRoot: string | undefined;
 let currentController: GitLogController | undefined;
 let currentProvider: GitLogViewProvider | undefined;
 let currentBranchDiffProvider: BranchDiffTreeProvider | undefined;
@@ -89,6 +100,7 @@ const branchDiffViewId = 'giPro.branchDiffView';
 const gitLogPanelId = 'giProPanel';
 
 export function registerGitLogView(context: vscode.ExtensionContext, git: GitRunner): void {
+  extensionRoot = context.extensionUri.fsPath;
   void vscode.commands.executeCommand('setContext', 'giPro.branchDiffVisible', false);
   void vscode.commands.executeCommand('setContext', 'giPro.branchDiffAvailable', false);
   currentProvider = new GitLogViewProvider(git);
@@ -153,6 +165,8 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
   private repoWatchers: vscode.FileSystemWatcher[] = [];
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private needsRefresh = false;
+  private inputFocused = false;
+  private blurTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly git: GitRunner) {}
 
@@ -167,10 +181,21 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
 
     this.controller = new GitLogController(this.git, webviewView.webview, root.fsPath);
     currentController = this.controller;
-    webviewView.webview.onDidReceiveMessage((message: unknown) => this.controller?.handleMessage(message));
+    webviewView.webview.onDidReceiveMessage((message: unknown) => {
+      if (this.handleInputFocus(message)) {
+        return;
+      }
+      void this.controller?.handleMessage(message);
+    });
     this.watchRepository(root.fsPath);
     webviewView.onDidChangeVisibility(() => {
-      if (webviewView.visible && this.needsRefresh) {
+      if (!webviewView.visible) {
+        // Nothing can hold focus in a hidden view; clear it so a deferred refresh is
+        // never stranded waiting for a blur that will not arrive.
+        this.inputFocused = false;
+        return;
+      }
+      if (this.needsRefresh) {
         this.needsRefresh = false;
         void this.controller?.render();
       }
@@ -221,13 +246,45 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  // Returns true when the message was a focus notification and needs no further handling.
+  private handleInputFocus(raw: unknown): boolean {
+    const message = raw as WebviewMessage;
+    if (message?.type !== 'inputFocus') {
+      return false;
+    }
+
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = undefined;
+    }
+
+    this.inputFocused = Boolean(message.focused);
+    if (this.inputFocused || !this.needsRefresh) {
+      return true;
+    }
+
+    // Tabbing between two inputs fires focusout before the next focusin, so wait a beat
+    // before flushing - otherwise the deferred render lands mid-hop and blurs anyway.
+    this.blurTimer = setTimeout(() => {
+      this.blurTimer = undefined;
+      if (!this.inputFocused && this.needsRefresh) {
+        this.needsRefresh = false;
+        void this.controller?.render();
+      }
+    }, 150);
+    return true;
+  }
+
   private scheduleRefresh(): void {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      if (this.view?.visible) {
+      // render() replaces webview.html outright, which destroys the DOM and drops focus
+      // mid-keystroke. git.autofetch rewrites FETCH_HEAD on a short interval, so this
+      // watcher fires constantly - hold the refresh until the input is blurred.
+      if (this.view?.visible && !this.inputFocused) {
         void this.controller?.render();
       } else {
         this.needsRefresh = true;
@@ -239,6 +296,10 @@ class GitLogViewProvider implements vscode.WebviewViewProvider {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = undefined;
+    }
+    if (this.blurTimer) {
+      clearTimeout(this.blurTimer);
+      this.blurTimer = undefined;
     }
     for (const watcher of this.repoWatchers) {
       watcher.dispose();
@@ -522,7 +583,7 @@ class GitLogController {
   private commitFilterRegex = false;
   private commitFilterUsers = new Set<string>();
   private commitFilterBranches = new Set<string>();
-  private readonly outputChannel = vscode.window.createOutputChannel('GI Pro Git');
+  private readonly outputChannel = vscode.window.createOutputChannel('Gitlane Git');
 
   constructor(
     private readonly git: GitRunner,
@@ -721,18 +782,37 @@ class GitLogController {
       case 'compareWithLocal':
         await this.showGitOutput(`git diff ${hash}`, `Diff with ${hash.slice(0, 8)}`);
         return;
-      case 'resetCurrentBranchHere': {
-        const answer = await vscode.window.showWarningMessage(`Reset current branch to ${hash.slice(0, 8)}?`, { modal: true }, 'Reset');
-        if (answer === 'Reset') {
-          await this.runGitAction(`git reset --hard ${hash}`, 'Current branch reset.');
-        }
+      case 'resetCurrentBranchHere':
+        await this.resetCurrentBranchTo(hash);
         return;
-      }
       case 'revertCommit':
         await this.runGitAction(`git revert ${hashArgs}`, 'Revert completed.');
         return;
       case 'pushAllUpToHere':
         await this.runGitAction('git push', 'Push completed.');
+        return;
+      case 'undoCommit':
+        await this.undoCommit(hash);
+        return;
+      case 'editCommitMessage':
+        await this.editCommitMessage(hash);
+        return;
+      case 'fixup':
+        await this.autosquashInto(hash, 'fixup');
+        return;
+      case 'squashInto':
+        await this.autosquashInto(hash, 'squash');
+        return;
+      case 'dropCommits':
+        await this.dropCommits(hashes);
+        return;
+      case 'squashCommits':
+        await this.squashCommits(hashes);
+        return;
+      case 'interactiveRebaseFromHere':
+        // Terminal, not exec: the todo list and any conflict resolution are the UX here,
+        // exactly like giPro.interactiveRebase in extension.ts.
+        await this.git.run(`git rebase -i --autostash ${hash}^`);
         return;
       case 'rebaseCurrentOnto':
         await this.runGitAction(`git rebase --autostash ${hash}`, 'Rebase completed.');
@@ -774,9 +854,14 @@ class GitLogController {
       case 'rebaseCurrentOnto':
         await this.runGitAction(`git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
         return;
-      case 'mergeIntoCurrent':
-        await this.runGitAction(`git merge --no-ff ${shellQuote(branch)}`, 'Merge completed.');
+      case 'mergeIntoCurrent': {
+        const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
+        if (!flags) {
+          return;
+        }
+        await this.runGitAction(mergeCommand(shellQuote(branch), flags), 'Merge completed.');
         return;
+      }
       case 'update':
         await this.updateBranch(branch, branchType);
         return;
@@ -851,6 +936,211 @@ class GitLogController {
     if (name) {
       await this.runGitAction(`git tag ${shellQuote(name)} ${hash}`, 'Tag created.');
     }
+  }
+
+  private async resetCurrentBranchTo(hash: string): Promise<void> {
+    const [currentBranch, target] = await Promise.all([this.getCurrentBranch(), this.describeCommit(hash)]);
+    const head = currentBranch ?? 'HEAD (detached)';
+
+    const picked = await pickResetMode(`Git Reset: ${head} → ${target}`);
+    if (!picked) {
+      return;
+    }
+
+    if (picked === 'hard') {
+      const answer = await vscode.window.showWarningMessage(
+        `Hard reset ${head} to ${hash.slice(0, 8)}? Any local changes will be lost.`,
+        { modal: true },
+        'Reset'
+      );
+      if (answer !== 'Reset') {
+        return;
+      }
+    }
+
+    await this.runGitAction(`git reset --${picked} ${hash}`, `Current branch reset (--${picked}).`);
+  }
+
+  private async describeCommit(hash: string): Promise<string> {
+    const short = hash.slice(0, 8);
+    try {
+      const line = (await this.git.exec(`git log -1 --format=%s%x1f%an ${hash}`)).trim();
+      const [subject, author] = line.split('\x1f');
+      return subject && author ? `${short} "${subject}" by ${author}` : short;
+    } catch {
+      return short;
+    }
+  }
+
+  private async headHash(): Promise<string> {
+    return (await this.git.exec('git rev-parse HEAD')).trim();
+  }
+
+  private async undoCommit(hash: string): Promise<void> {
+    // IntelliJ only offers Undo Commit on the newest commit, and it keeps the changes
+    // rather than discarding them - that is a soft reset.
+    if ((await this.headHash()) !== hash) {
+      vscode.window.showInformationMessage('Undo Commit applies only to the most recent commit on the current branch.');
+      return;
+    }
+    await this.runGitAction('git reset --soft HEAD~1', 'Commit undone. Its changes are staged again.');
+  }
+
+  private async editCommitMessage(hash: string): Promise<void> {
+    const current = (await this.git.exec(`git log -1 --format=%B ${hash}`)).trim();
+    const message = await vscode.window.showInputBox({
+      prompt: `Edit the message of ${hash.slice(0, 8)}`,
+      value: current,
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() ? undefined : 'The commit message cannot be empty.')
+    });
+    if (!message) {
+      return;
+    }
+
+    if ((await this.headHash()) === hash) {
+      await this.runGitAction(`git commit --amend -m ${shellQuote(message)}`, 'Commit message updated.');
+      return;
+    }
+    await this.rewriteHistory('reword', [hash], message, 'Commit message updated.');
+  }
+
+  private async dropCommits(hashes: string[]): Promise<void> {
+    const label = hashes.length === 1 ? `commit ${hashes[0].slice(0, 8)}` : `${hashes.length} commits`;
+    const answer = await vscode.window.showWarningMessage(
+      `Drop ${label}? This rewrites the history of the current branch.`,
+      { modal: true },
+      'Drop'
+    );
+    if (answer !== 'Drop') {
+      return;
+    }
+    await this.rewriteHistory('drop', hashes, undefined, hashes.length === 1 ? 'Commit dropped.' : 'Commits dropped.');
+  }
+
+  private async squashCommits(hashes: string[]): Promise<void> {
+    if (hashes.length < 2) {
+      vscode.window.showInformationMessage('Select at least two commits to squash.');
+      return;
+    }
+
+    const subjects = await this.git.exec(`git log --no-walk=sorted --format=%s ${hashes.join(' ')}`);
+    const message = await vscode.window.showInputBox({
+      prompt: `Message for the squash of ${hashes.length} commits`,
+      value: splitLines(subjects)[0] || '',
+      ignoreFocusOut: true,
+      validateInput: (value) => (value.trim() ? undefined : 'The commit message cannot be empty.')
+    });
+    if (!message) {
+      return;
+    }
+    await this.rewriteHistory('squash', hashes, message, 'Commits squashed.');
+  }
+
+  private async autosquashInto(hash: string, kind: 'fixup' | 'squash'): Promise<void> {
+    // Both actions fold *staged* changes into an existing commit, so there is nothing to
+    // do until something is staged.
+    if (!(await this.git.exec('git diff --cached --name-only')).trim()) {
+      vscode.window.showInformationMessage(`Stage the changes you want to ${kind} into ${hash.slice(0, 8)} first.`);
+      return;
+    }
+
+    await this.runGitAction(`git commit --${kind}=${hash}`);
+    await this.runRebase(
+      `git rebase -i --autosquash --autostash ${await this.rebaseBase([hash])}`,
+      // --autosquash already positions the marker commit, so accept the generated todo
+      // list and the proposed message instead of opening an editor that would hang.
+      { GIT_SEQUENCE_EDITOR: 'true', GIT_EDITOR: 'true' },
+      kind === 'fixup' ? 'Fixup applied.' : 'Squashed into the selected commit.'
+    );
+  }
+
+  private async rewriteHistory(
+    op: 'drop' | 'squash' | 'reword',
+    hashes: string[],
+    message: string | undefined,
+    successMessage: string
+  ): Promise<void> {
+    const env: NodeJS.ProcessEnv = {
+      ELECTRON_RUN_AS_NODE: '1',
+      GIT_SEQUENCE_EDITOR: `${this.rebaseEditor()} --todo`,
+      GI_PRO_OP: op,
+      GI_PRO_HASHES: hashes.join(' ')
+    };
+
+    let messageFile: string | undefined;
+    if (message === undefined) {
+      // No message to supply: take git's default rather than opening an editor, which
+      // would block the child process forever.
+      env.GIT_EDITOR = 'true';
+    } else {
+      messageFile = path.join(os.tmpdir(), `gi-pro-message-${process.pid}-${hashes[0].slice(0, 8)}`);
+      fs.writeFileSync(messageFile, message.endsWith('\n') ? message : `${message}\n`);
+      env.GIT_EDITOR = `${this.rebaseEditor()} --message`;
+      env.GI_PRO_MESSAGE_FILE = messageFile;
+    }
+
+    try {
+      await this.runRebase(`git rebase -i --autostash ${await this.rebaseBase(hashes)}`, env, successMessage);
+    } finally {
+      if (messageFile) {
+        try {
+          fs.unlinkSync(messageFile);
+        } catch {
+          // A leftover temp file is harmless.
+        }
+      }
+    }
+  }
+
+  private async runRebase(command: string, env: NodeJS.ProcessEnv, successMessage: string): Promise<void> {
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Gitlane: ${command}` },
+        () => this.git.exec(command, env)
+      );
+      vscode.window.showInformationMessage(successMessage);
+    } catch (error) {
+      // A conflict leaves the branch mid-rebase, and this panel has no UI for that state.
+      // Abort so the repository is left exactly as it was, and say so explicitly.
+      const aborted = await this.abortRebaseIfInProgress();
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(aborted ? `${detail}\n\nThe rebase was aborted; the branch is unchanged.` : detail);
+    }
+  }
+
+  private async abortRebaseIfInProgress(): Promise<boolean> {
+    const gitDir = resolveGitDir(this.rootPath);
+    if (!fs.existsSync(path.join(gitDir, 'rebase-merge')) && !fs.existsSync(path.join(gitDir, 'rebase-apply'))) {
+      return false;
+    }
+    try {
+      await this.git.exec('git rebase --abort');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // The rebase must start one commit before the oldest of the selection so every selected
+  // commit appears in the todo list.
+  private async rebaseBase(hashes: string[]): Promise<string> {
+    // Ancestry, not dates: `rev-list --no-walk=sorted` orders by commit date, which ties
+    // for commits made in the same second and disagrees with history order after a
+    // rebase. merge-base returns the common ancestor, i.e. the oldest of the selection.
+    const oldest = (await this.git.exec(`git merge-base --octopus ${hashes.join(' ')}`)).trim();
+    const parents = (await this.git.exec(`git rev-list --parents -n 1 ${oldest}`)).trim().split(/\s+/);
+    // A root commit has no parent, so <sha>^ would fail; rebase from the beginning.
+    return parents.length > 1 ? `${oldest}^` : '--root';
+  }
+
+  private rebaseEditor(): string {
+    if (!extensionRoot) {
+      throw new Error('The extension path is unavailable, so history cannot be rewritten.');
+    }
+    // process.execPath is the VS Code binary; ELECTRON_RUN_AS_NODE makes it behave as
+    // plain node, which avoids depending on node being installed on PATH.
+    return `${shellQuote(process.execPath)} ${shellQuote(path.join(extensionRoot, 'dist', 'rebaseEditor.js'))}`;
   }
 
   private async updateBranch(branch: string, branchType: Branch['type'] | undefined): Promise<void> {
@@ -952,7 +1242,7 @@ class GitLogController {
 
   private async runGitAction(command: string, successMessage?: string): Promise<string> {
     const output = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `GI Pro: ${command}` },
+      { location: vscode.ProgressLocation.Notification, title: `Gitlane: ${command}` },
       () => this.git.exec(command)
     );
     if (successMessage) {
@@ -968,7 +1258,7 @@ class GitLogController {
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine(output || '(no output)');
     this.outputChannel.show(true);
-    vscode.window.showInformationMessage(`${title} opened in GI Pro Git output.`);
+    vscode.window.showInformationMessage(`${title} opened in Gitlane Git output.`);
   }
 
   private async getCurrentBranch(): Promise<string | undefined> {
@@ -1320,6 +1610,32 @@ async function pathExistsInRef(git: GitRunner, ref: string, filePath: string): P
   }
 }
 
+// showQuickPick always highlights the first item; IntelliJ pre-selects Mixed, so drive
+// the picker directly to keep the same default while preserving the Soft/Mixed/Hard/Keep order.
+function pickResetMode(title: string): Promise<(typeof RESET_MODES)[number]['mode'] | undefined> {
+  type ResetItem = vscode.QuickPickItem & { mode: (typeof RESET_MODES)[number]['mode'] };
+  const picker = vscode.window.createQuickPick<ResetItem>();
+  picker.title = title;
+  picker.placeholder = 'Select how the working tree and the index are updated';
+  picker.ignoreFocusOut = true;
+  picker.matchOnDetail = true;
+  picker.items = RESET_MODES.map((entry) => ({ label: entry.label, detail: entry.detail, mode: entry.mode }));
+  picker.activeItems = picker.items.filter((item) => item.mode === 'mixed');
+
+  return new Promise((resolve) => {
+    let picked: ResetItem | undefined;
+    picker.onDidAccept(() => {
+      picked = picker.selectedItems[0];
+      picker.hide();
+    });
+    picker.onDidHide(() => {
+      picker.dispose();
+      resolve(picked?.mode);
+    });
+    picker.show();
+  });
+}
+
 function renderHtml(webview: vscode.Webview, state: ViewState): string {
   const nonce = getNonce();
   const json = JSON.stringify(state).replace(/</g, '\\u003c');
@@ -1360,7 +1676,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       --add-color: #88d38f;
       --del-color: #ff8b91;
       --hunk-color: #91b4ff;
-      --row-border: var(--vscode-editorGroup-border, rgba(255,255,255,0.04));
       --branch-icon: #69b8f5;
       --current-icon: #f4c542;
       --tag-icon: #8dc9c3;
@@ -1554,8 +1869,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .filter-chevron {
       position: relative;
       display: inline-block;
-      width: 14px;
-      height: 14px;
+      width: 11px;
+      height: 11px;
       color: inherit;
       font-size: 0;
       line-height: 0;
@@ -1565,10 +1880,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 6px;
-      height: 6px;
-      border-right: 2px solid currentColor;
-      border-bottom: 2px solid currentColor;
+      width: 4px;
+      height: 4px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
       transform: translate(-50%, -68%) rotate(45deg);
       transform-origin: center;
     }
@@ -1906,7 +2221,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       align-items: center;
       padding: 0 10px 0 0;
       cursor: pointer;
-      border-bottom: 1px solid var(--row-border);
       overflow: hidden;
     }
     .graph-layer {
@@ -2479,14 +2793,14 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         { separator: true },
         { label: 'Reset Current Branch to Here...', action: 'resetCurrentBranchHere', icon: undoIcon(), disabled: multi },
         { label: multi ? 'Revert Commits' : 'Revert Commit', action: 'revertCommit' },
-        { label: 'Undo Commit...', action: 'undoCommit', disabled: true },
+        { label: 'Undo Commit...', action: 'undoCommit', disabled: multi },
         { separator: true },
-        { label: 'Edit Commit Message...', action: 'editCommitMessage', disabled: true, shortcut: 'F2' },
-        { label: 'Fixup...', action: 'fixup', disabled: true },
-        { label: 'Squash Into...', action: 'squashInto', disabled: true },
-        { label: 'Drop Commits', action: 'dropCommits', disabled: true },
-        { label: 'Squash Commits...', action: 'squashCommits', disabled: true },
-        { label: 'Interactively Rebase from Here...', action: 'interactiveRebaseFromHere', disabled: true },
+        { label: 'Edit Commit Message...', action: 'editCommitMessage', disabled: multi, shortcut: 'F2' },
+        { label: 'Fixup...', action: 'fixup', disabled: multi },
+        { label: 'Squash Into...', action: 'squashInto', disabled: multi },
+        { label: multi ? 'Drop Commits' : 'Drop Commit', action: 'dropCommits' },
+        { label: 'Squash Commits...', action: 'squashCommits', disabled: !multi },
+        { label: 'Interactively Rebase from Here...', action: 'interactiveRebaseFromHere', disabled: multi },
         { label: 'Push All up to Here...', action: 'pushAllUpToHere', disabled: multi },
         { separator: true },
         { label: "Rebase '" + current + "' onto Selected Commit", action: 'rebaseCurrentOnto', disabled: multi },
@@ -3336,7 +3650,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       const normalized = query.trim().toLowerCase();
       const branchRows = Array.from(document.querySelectorAll('[data-branch]'));
       branchRows.forEach((node) => {
-        node.style.display = node.textContent.toLowerCase().includes(normalized) ? '' : 'none';
+        // The row only renders the last path segment, so match the full name from the
+        // dataset instead - otherwise searching a folder prefix never hits anything.
+        const name = (node.dataset.branch || node.textContent).toLowerCase();
+        node.style.display = name.includes(normalized) ? '' : 'none';
       });
 
       const folderRows = Array.from(document.querySelectorAll('[data-branch-folder]')).reverse();
@@ -3389,6 +3706,20 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       updateCommitFilterIndicators();
       sendCommitFilters();
     }
+
+    // A repository watcher tick triggers a full webview.html replace, which would wipe
+    // whatever is being typed. Report focus so the extension can hold that refresh back.
+    function isTextEntry(node) {
+      return Boolean(node) && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA');
+    }
+
+    document.addEventListener('focusin', (event) => {
+      if (isTextEntry(event.target)) send({ type: 'inputFocus', focused: true });
+    });
+
+    document.addEventListener('focusout', (event) => {
+      if (isTextEntry(event.target)) send({ type: 'inputFocus', focused: false });
+    });
 
     window.addEventListener('message', (event) => {
       const message = event.data || {};

@@ -20,8 +20,7 @@ class InlineBlameController implements vscode.Disposable {
   private readonly decorationType = vscode.window.createTextEditorDecorationType({
     after: {
       margin: '0 0 0 2.5em',
-      color: 'rgba(128, 128, 128, 0.48)',
-      fontStyle: 'italic'
+      color: 'rgba(128, 128, 128, 0.48)'
     },
     rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
   });
