@@ -70,7 +70,7 @@ export class GitRunner {
     }
 
     const config = vscode.workspace.getConfiguration('giPro');
-    const name = config.get<string>('terminalName', 'Gitlane');
+    const name = config.get<string>('terminalName', 'Gitrail');
     this.terminal = vscode.window.createTerminal({
       name,
       cwd: root.fsPath

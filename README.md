@@ -1,16 +1,16 @@
-# Gitlane
+# Gitrail
 
-> ### Gitlane is the continuation of **GI Pro**
+> ### Gitrail is the continuation of **GI Pro**
 >
 > Same extension, same author, new name and new publisher. GI Pro is no longer maintained
 > and will not receive further updates.
 >
-> **If you already have GI Pro installed:** the Marketplace treats Gitlane and GI Pro as two
-> separate extensions, so GI Pro will *not* update to Gitlane on its own. Uninstall GI Pro and
-> install Gitlane to keep getting updates. Your settings carry over — the underlying
+> **If you already have GI Pro installed:** the Marketplace treats Gitrail and GI Pro as two
+> separate extensions, so GI Pro will *not* update to Gitrail on its own. Uninstall GI Pro and
+> install Gitrail to keep getting updates. Your settings carry over — the underlying
 > configuration keys (`giPro.*`) are unchanged.
 
-Gitlane brings fast Git workflows into VS Code: a visual log view, file history, selection history, inline blame, and common Git actions from the Command Palette and editor context menu.
+Gitrail brings fast Git workflows into VS Code: a visual log view, file history, selection history, inline blame, and common Git actions from the Command Palette and editor context menu.
 
 ## Features
 
@@ -28,25 +28,25 @@ Gitlane brings fast Git workflows into VS Code: a visual log view, file history,
 
 Browse branches, search commits, inspect the graph, and review changed files from one panel.
 
-![Gitlane visual Git Log view](media/readme/log-view.png)
+![Gitrail visual Git Log view](media/readme/log-view.png)
 
 ### Working Tree Diff
 
 Compare a branch with your working tree and get individual files or all changes from the selected branch.
 
-![Gitlane working tree diff view](media/readme/working-tree-diff.png)
+![Gitrail working tree diff view](media/readme/working-tree-diff.png)
 
 ### History for Selection
 
 Select lines in a tracked file and see the commits that touched that exact range.
 
-![Gitlane history for selected lines](media/readme/selection-history.png)
+![Gitrail history for selected lines](media/readme/selection-history.png)
 
 ### Inline Blame
 
 See author and commit information for the active line without leaving the editor.
 
-![Gitlane inline blame](media/readme/inline-blame.png)
+![Gitrail inline blame](media/readme/inline-blame.png)
 
 ## Requirements
 
@@ -58,7 +58,7 @@ See author and commit information for the active line without leaving the editor
 
 1. Open a Git repository in VS Code.
 2. Open the Command Palette with `Cmd+Shift+P` on macOS or `Ctrl+Shift+P` on Windows/Linux.
-3. Run `Gitlane: Open Log View`.
+3. Run `Gitrail: Open Log View`.
 4. Click a commit to inspect details and changed files.
 5. Click a changed file to preview its patch.
 
@@ -66,7 +66,7 @@ See author and commit information for the active line without leaving the editor
 
 ### Open the Git Log
 
-Run `Gitlane: Open Log View` from the Command Palette.
+Run `Gitrail: Open Log View` from the Command Palette.
 
 In the Log view:
 
@@ -78,47 +78,47 @@ In the Log view:
 
 ### View File History
 
-Open a tracked file, right-click in the editor, then choose `Gitlane: Show File History`.
+Open a tracked file, right-click in the editor, then choose `Gitrail: Show File History`.
 
-Gitlane opens the History panel with commits that changed the file. Click a row to open a diff for that commit.
+Gitrail opens the History panel with commits that changed the file. Click a row to open a diff for that commit.
 
 ### View History for Selected Lines
 
-Select one or more lines in a tracked file, right-click the editor, then choose `Gitlane: Show History for Selection`.
+Select one or more lines in a tracked file, right-click the editor, then choose `Gitrail: Show History for Selection`.
 
 This uses Git line history to show commits that touched the selected range.
 
 ### Compare a File with HEAD
 
-Open a tracked file, right-click in the editor, then choose `Gitlane: Compare File with HEAD`.
+Open a tracked file, right-click in the editor, then choose `Gitrail: Compare File with HEAD`.
 
 ### Use Inline Blame
 
-Move the cursor inside a tracked file. Gitlane shows blame information for the active line when inline blame is enabled.
+Move the cursor inside a tracked file. Gitrail shows blame information for the active line when inline blame is enabled.
 
 ### Run Quick Git Actions
 
-Use the Command Palette and search for `Gitlane`.
+Use the Command Palette and search for `Gitrail`.
 
 Available actions include:
 
-- `Gitlane: Smart Commit`
-- `Gitlane: Fetch All`
-- `Gitlane: Pull with Rebase`
-- `Gitlane: Push`
-- `Gitlane: Force Push with Lease`
-- `Gitlane: Stash Changes`
-- `Gitlane: Pop Stash`
-- `Gitlane: Checkout Branch`
-- `Gitlane: Interactive Rebase`
-- `Gitlane: Cherry-pick Commit`
-- `Gitlane: Abort`
+- `Gitrail: Smart Commit`
+- `Gitrail: Fetch All`
+- `Gitrail: Pull with Rebase`
+- `Gitrail: Push`
+- `Gitrail: Force Push with Lease`
+- `Gitrail: Stash Changes`
+- `Gitrail: Pop Stash`
+- `Gitrail: Checkout Branch`
+- `Gitrail: Interactive Rebase`
+- `Gitrail: Cherry-pick Commit`
+- `Gitrail: Abort`
 
 ## Settings
 
-Gitlane contributes these settings:
+Gitrail contributes these settings:
 
-- `giPro.terminalName`: terminal name used to run Git commands. Default: `Gitlane`.
+- `giPro.terminalName`: terminal name used to run Git commands. Default: `Gitrail`.
 - `giPro.smartCommitPushAfterCommit`: ask whether to push after a smart commit. Default: `false`.
 - `giPro.inlineBlame.enabled`: show inline Git blame on the active cursor line. Default: `true`.
 - `giPro.inlineBlame.delayMs`: delay before refreshing inline blame after cursor movement. Default: `50`.
@@ -139,7 +139,7 @@ Git line history only works for tracked files. Save the file first, then try aga
 
 ### Git actions fail
 
-Open the `Gitlane` terminal and check the Git output. Most failures come from repository state, authentication, merge conflicts, or missing remotes.
+Open the `Gitrail` terminal and check the Git output. Most failures come from repository state, authentication, merge conflicts, or missing remotes.
 
 ## Development
 

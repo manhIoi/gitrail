@@ -2,8 +2,8 @@
 
 ## 0.1.0
 
-**Renamed from GI Pro to Gitlane**, published under a new publisher. GI Pro is no longer
-maintained; it will not update to Gitlane automatically, so uninstall it and install Gitlane.
+**Renamed from GI Pro to Gitrail**, published under a new publisher. GI Pro is no longer
+maintained; it will not update to Gitrail automatically, so uninstall it and install Gitrail.
 Configuration keys (`giPro.*`) are unchanged, so existing settings keep working.
 
 - Add reset modes to "Reset Current Branch to Here": Soft, Mixed, Hard, and Keep, instead of always doing a hard reset.

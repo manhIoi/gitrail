@@ -1,6 +1,6 @@
 {
-  "name": "gitlane",
-  "displayName": "Gitlane — Visual Git Log",
+  "name": "gitrail",
+  "displayName": "Gitrail — Visual Git Log",
   "description": "Successor to GI Pro. Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
   "version": "0.1.0",
   "publisher": "manhloi",
@@ -8,11 +8,11 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/manhIoi/gitlane.git"
+    "url": "https://github.com/manhIoi/gitrail.git"
   },
-  "homepage": "https://github.com/manhIoi/gitlane#readme",
+  "homepage": "https://github.com/manhIoi/gitrail#readme",
   "bugs": {
-    "url": "https://github.com/manhIoi/gitlane/issues"
+    "url": "https://github.com/manhIoi/gitrail/issues"
   },
   "engines": {
     "vscode": "^1.92.0"
@@ -66,123 +66,123 @@
       {
         "command": "giPro.smartCommit",
         "title": "Smart Commit",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.fetch",
         "title": "Fetch All",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.pullRebase",
         "title": "Pull with Rebase",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.push",
         "title": "Push",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.forcePushLease",
         "title": "Force Push with Lease",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.amendNoEdit",
         "title": "Amend Commit Without Editing Message",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.interactiveRebase",
         "title": "Interactive Rebase",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.abortGitOperation",
         "title": "Abort",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.stash",
         "title": "Stash Changes",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.stashPop",
         "title": "Pop Stash",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.checkoutBranch",
         "title": "Checkout Branch",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.branches",
         "title": "Branches",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.compareFileWithHead",
         "title": "Compare File with HEAD",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.showFileHistory",
         "title": "Show File History",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.showHistoryForSelection",
         "title": "Show History for Selection",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.openGitLogView",
         "title": "Open Log View",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.cherryPick",
         "title": "Cherry-pick Commit",
-        "category": "Gitlane"
+        "category": "Gitrail"
       },
       {
         "command": "giPro.branchDiff.refresh",
         "title": "Refresh",
-        "category": "Gitlane",
+        "category": "Gitrail",
         "icon": "$(refresh)"
       },
       {
         "command": "giPro.branchDiff.getAll",
         "title": "Get All",
-        "category": "Gitlane",
+        "category": "Gitrail",
         "icon": "$(cloud-download)"
       },
       {
         "command": "giPro.branchDiff.getFile",
         "title": "Get",
-        "category": "Gitlane",
+        "category": "Gitrail",
         "icon": "$(cloud-download)"
       },
       {
         "command": "giPro.branchDiff.close",
         "title": "Close Diff",
-        "category": "Gitlane",
+        "category": "Gitrail",
         "icon": "$(close)"
       },
       {
         "command": "giPro.branchDiff.openFile",
         "title": "Open Diff",
-        "category": "Gitlane"
+        "category": "Gitrail"
       }
     ],
     "viewsContainers": {
       "panel": [
         {
           "id": "giProPanel",
-          "title": "Gitlane",
+          "title": "Gitrail",
           "icon": "media/git-log.svg"
         },
         {
@@ -211,7 +211,7 @@
       "scm": [
         {
           "id": "giPro.branchDiffView",
-          "name": "Gitlane Diff",
+          "name": "Gitrail Diff",
           "when": "giPro.branchDiffVisible"
         }
       ]
@@ -289,11 +289,11 @@
       ]
     },
     "configuration": {
-      "title": "Gitlane",
+      "title": "Gitrail",
       "properties": {
         "giPro.terminalName": {
           "type": "string",
-          "default": "Gitlane",
+          "default": "Gitrail",
           "description": "Terminal name used to run Git commands."
         },
         "giPro.smartCommitPushAfterCommit": {

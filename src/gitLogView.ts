@@ -583,7 +583,7 @@ class GitLogController {
   private commitFilterRegex = false;
   private commitFilterUsers = new Set<string>();
   private commitFilterBranches = new Set<string>();
-  private readonly outputChannel = vscode.window.createOutputChannel('Gitlane Git');
+  private readonly outputChannel = vscode.window.createOutputChannel('Gitrail Git');
 
   constructor(
     private readonly git: GitRunner,
@@ -1096,7 +1096,7 @@ class GitLogController {
   private async runRebase(command: string, env: NodeJS.ProcessEnv, successMessage: string): Promise<void> {
     try {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Gitlane: ${command}` },
+        { location: vscode.ProgressLocation.Notification, title: `Gitrail: ${command}` },
         () => this.git.exec(command, env)
       );
       vscode.window.showInformationMessage(successMessage);
@@ -1242,7 +1242,7 @@ class GitLogController {
 
   private async runGitAction(command: string, successMessage?: string): Promise<string> {
     const output = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Gitlane: ${command}` },
+      { location: vscode.ProgressLocation.Notification, title: `Gitrail: ${command}` },
       () => this.git.exec(command)
     );
     if (successMessage) {
@@ -1258,7 +1258,7 @@ class GitLogController {
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine(output || '(no output)');
     this.outputChannel.show(true);
-    vscode.window.showInformationMessage(`${title} opened in Gitlane Git output.`);
+    vscode.window.showInformationMessage(`${title} opened in Gitrail Git output.`);
   }
 
   private async getCurrentBranch(): Promise<string | undefined> {

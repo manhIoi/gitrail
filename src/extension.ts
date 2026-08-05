@@ -42,15 +42,15 @@ type BranchActionItem = vscode.QuickPickItem & {
 
 let gitOutputChannel: vscode.OutputChannel | undefined;
 
-// Gitlane was published as GI Pro under a publisher that is no longer reachable. The two
+// Gitrail was published as GI Pro under a publisher that is no longer reachable. The two
 // are separate extensions to the Marketplace, so GI Pro never auto-updates away and both
 // can end up installed - which registers every giPro.* command twice.
 const legacyExtensionId = 'iammanhloi.gi-pro';
-const legacyNoticeDismissedKey = 'gitlane.legacyNoticeDismissed';
+const legacyNoticeDismissedKey = 'gitrail.legacyNoticeDismissed';
 
 export function activate(context: vscode.ExtensionContext): void {
   const git = new GitRunner();
-  gitOutputChannel = vscode.window.createOutputChannel('Gitlane Git');
+  gitOutputChannel = vscode.window.createOutputChannel('Gitrail Git');
   context.subscriptions.push(gitOutputChannel);
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('gitpro', new GitProContentProvider(git)));
   registerGitLogView(context, git);
@@ -101,7 +101,7 @@ async function warnAboutLegacyExtension(context: vscode.ExtensionContext): Promi
   const uninstall = 'Uninstall GI Pro';
   const dismiss = "Don't show again";
   const answer = await vscode.window.showWarningMessage(
-    'GI Pro is still installed. Gitlane replaces it, and running both registers every command twice.',
+    'GI Pro is still installed. Gitrail replaces it, and running both registers every command twice.',
     uninstall,
     dismiss
   );
@@ -750,7 +750,7 @@ async function safeExec(git: GitRunner, command: string): Promise<string | undef
 async function execGitAction(git: GitRunner, command: string, successMessage: string, progressTitle?: string): Promise<void> {
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: progressTitle ?? `Gitlane: ${command}` },
+      { location: vscode.ProgressLocation.Notification, title: progressTitle ?? `Gitrail: ${command}` },
       () => git.exec(command)
     );
     vscode.window.showInformationMessage(successMessage);
@@ -771,7 +771,7 @@ async function showGitOutput(git: GitRunner, command: string, title: string): Pr
     channel.appendLine('');
     channel.appendLine(output || '(no output)');
     channel.show(true);
-    vscode.window.showInformationMessage(`${title} opened in Gitlane Git output.`);
+    vscode.window.showInformationMessage(`${title} opened in Gitrail Git output.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     vscode.window.showErrorMessage(message);
@@ -780,7 +780,7 @@ async function showGitOutput(git: GitRunner, command: string, title: string): Pr
 
 function getGitOutputChannel(): vscode.OutputChannel {
   if (!gitOutputChannel) {
-    gitOutputChannel = vscode.window.createOutputChannel('Gitlane Git');
+    gitOutputChannel = vscode.window.createOutputChannel('Gitrail Git');
   }
   return gitOutputChannel;
 }
