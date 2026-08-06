@@ -34,7 +34,6 @@ type BranchActionItem = vscode.QuickPickItem & {
     | 'diffWithWorkingTree'
     | 'rebaseCurrentOnto'
     | 'mergeIntoCurrent'
-    | 'mergeIntoCurrentWithOptions'
     | 'update'
     | 'push'
     | 'rename'
@@ -77,7 +76,8 @@ export function activate(context: vscode.ExtensionContext): void {
     { id: 'giPro.showFileHistory', handler: () => showFileHistory(git) },
     { id: 'giPro.showHistoryForSelection', handler: () => showHistoryForSelection(git) },
     { id: 'giPro.openGitLogView', handler: () => showGitLogView(context, git) },
-    { id: 'giPro.cherryPick', handler: () => cherryPick(git) }
+    { id: 'giPro.cherryPick', handler: () => cherryPick(git) },
+    { id: 'giPro.mergeWithOptions', handler: () => mergeWithOptions(git) }
   ];
 
   for (const command of commands) {
@@ -289,6 +289,31 @@ async function checkoutBranch(git: GitRunner): Promise<void> {
   await checkoutSelectedBranch(git, selected.branch, selected.branchType);
 }
 
+// The branch menus only offer a plain merge, which is what IntelliJ's branch popup does.
+// The flags live here instead, off the palette, so the common case stays one click.
+async function mergeWithOptions(git: GitRunner): Promise<void> {
+  const currentBranch = await getCurrentBranch(git);
+  if (!currentBranch) {
+    vscode.window.showErrorMessage('Cannot merge: HEAD is detached or this is not a Git repository.');
+    return;
+  }
+
+  // Merging a branch into itself is a no-op git accepts silently, so drop it from the list
+  // the same way the branch menus grey the entry out.
+  const items = (await checkoutBranchItems(git)).filter((item) => item.branch !== currentBranch);
+  const selected = await vscode.window.showQuickPick(items, { placeHolder: `Merge which branch into '${currentBranch}'?` });
+  if (!selected?.branch) {
+    return;
+  }
+
+  const flags = await pickMergeOptions(`Merge ${selected.branch} into ${currentBranch}`);
+  if (!flags) {
+    return;
+  }
+
+  await execGitAction(git, mergeCommand(shellQuote(selected.branch), flags), 'Merge completed.');
+}
+
 async function branches(context: vscode.ExtensionContext, git: GitRunner): Promise<void> {
   const currentBranch = await getCurrentBranch(git);
   const items = await branchPickItems(git, currentBranch);
@@ -474,14 +499,6 @@ async function showBranchActions(
     case 'mergeIntoCurrent':
       await execGitAction(git, mergeCommand(shellQuote(branch), []), 'Merge completed.');
       return;
-    case 'mergeIntoCurrentWithOptions': {
-      const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
-      if (!flags) {
-        return;
-      }
-      await execGitAction(git, mergeCommand(shellQuote(branch), flags), 'Merge completed.');
-      return;
-    }
     case 'update':
       await updateSelectedBranch(git, branch, branchType, currentBranch);
       return;
@@ -527,8 +544,7 @@ function branchActionItems(
     items.push(
       { label: '', kind: vscode.QuickPickItemKind.Separator, action: 'rebaseCurrentOnto' },
       { label: `Rebase '${current}' onto '${branch}'`, action: 'rebaseCurrentOnto' },
-      { label: `Merge '${branch}' into '${current}'`, action: 'mergeIntoCurrent' },
-      { label: `Merge '${branch}' into '${current}' with Options...`, action: 'mergeIntoCurrentWithOptions' }
+      { label: `Merge '${branch}' into '${current}'`, action: 'mergeIntoCurrent' }
     );
   }
 

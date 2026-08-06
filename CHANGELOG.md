@@ -2,7 +2,7 @@
 
 ## 0.1.2
 
-- Stop the Merge action asking for merge options every time. IntelliJ's branch popup runs a bare `git merge <branch>` — fast-forward when it can, a merge commit otherwise — so that is what Merge now does. The options moved behind a second entry, `Merge '<branch>' into '<current>' with Options...`, in both the branch menu and the Log View's branch context menu.
+- Stop the Merge action asking for merge options every time. IntelliJ's branch popup runs a bare `git merge <branch>` — fast-forward when it can, a merge commit otherwise — so that is what merging from a branch menu now does. The options are still there, as the `Gitrail: Merge with Options...` command, which asks for the branch and then the flags. Keeping them out of the branch menus keeps those menus short.
 
 ## 0.1.1
 

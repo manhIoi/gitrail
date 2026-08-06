@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { GitRunner, shellQuote } from './gitRunner';
-import { mergeCommand, pickMergeOptions } from './mergeOptions';
+import { mergeCommand } from './mergeOptions';
 
 type Branch = {
   name: string;
@@ -913,14 +913,6 @@ class GitLogController {
       case 'mergeIntoCurrent':
         await this.runGitAction(mergeCommand(shellQuote(branch), []), 'Merge completed.');
         return;
-      case 'mergeIntoCurrentWithOptions': {
-        const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
-        if (!flags) {
-          return;
-        }
-        await this.runGitAction(mergeCommand(shellQuote(branch), flags), 'Merge completed.');
-        return;
-      }
       case 'update':
         await this.updateBranch(branch, branchType);
         return;
@@ -2934,7 +2926,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         { separator: true },
         { label: 'Rebase ' + current + ' onto ' + selected, action: 'rebaseCurrentOnto', disabled: noCurrent || branch === currentBranch },
         { label: 'Merge ' + selected + ' into ' + current, action: 'mergeIntoCurrent', disabled: noCurrent || branch === currentBranch },
-        { label: 'Merge ' + selected + ' into ' + current + ' with Options...', action: 'mergeIntoCurrentWithOptions', disabled: noCurrent || branch === currentBranch },
         { separator: true },
         { label: 'Update', action: 'update' },
         { label: 'Push...', action: 'push', disabled: isRemote },
