@@ -2,6 +2,7 @@
 
 ## 0.1.2
 
+- Remove the phantom `origin` entry from the `Checkout Branch` and `Branches` lists too. 0.1.1 dropped it from the Log View but left it in both quick picks, which read their remote branches separately.
 - Stop the Merge action asking for merge options every time. IntelliJ's branch popup runs a bare `git merge <branch>` — fast-forward when it can, a merge commit otherwise — so that is what merging from a branch menu now does. The options are still there, as the `Gitrail: Merge with Options...` command, which asks for the branch and then the flags. Keeping them out of the branch menus keeps those menus short.
 
 ## 0.1.1

@@ -352,10 +352,22 @@ async function branches(context: vscode.ExtensionContext, git: GitRunner): Promi
   }
 }
 
+// refs/remotes/origin/HEAD shortens to plain "origin", a phantom branch duplicating whatever
+// the remote's default branch points at. It is a symbolic ref, so filter on that rather than
+// on the name: the old check looked for a "/HEAD" suffix the shortened name does not have.
+function remoteBranchNames(output: string | undefined): string[] {
+  return splitLines(output || '')
+    .map((line) => {
+      const [branch, symref] = line.split('\t');
+      return symref ? '' : (branch || '').trim();
+    })
+    .filter((branch) => branch && !branch.endsWith('/HEAD'));
+}
+
 async function checkoutBranchItems(git: GitRunner): Promise<BranchPickItem[]> {
   const [localOutput, remoteOutput] = await Promise.all([
     safeExec(git, "git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)' refs/heads"),
-    safeExec(git, 'git branch -r --format="%(refname:short)"')
+    safeExec(git, 'git for-each-ref --format="%(refname:short)%09%(symref)" refs/remotes')
   ]);
 
   const locals: BranchPickItem[] = splitLines(localOutput || '').map((line) => {
@@ -373,16 +385,14 @@ async function checkoutBranchItems(git: GitRunner): Promise<BranchPickItem[]> {
     };
   });
 
-  const remotes: BranchPickItem[] = splitLines(remoteOutput || '')
-    .filter((branch) => !branch.endsWith('/HEAD'))
-    .map((branch) => ({
-      label: branch.replace(/^origin\//, ''),
-      description: branch,
-      iconPath: new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.blue')),
-      branch,
-      branchType: 'remote',
-      current: false
-    }));
+  const remotes: BranchPickItem[] = remoteBranchNames(remoteOutput).map((branch) => ({
+    label: branch.replace(/^origin\//, ''),
+    description: branch,
+    iconPath: new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.blue')),
+    branch,
+    branchType: 'remote',
+    current: false
+  }));
 
   return [
     { label: 'Local', kind: vscode.QuickPickItemKind.Separator },
@@ -407,7 +417,7 @@ async function newBranchFromHead(git: GitRunner): Promise<void> {
 async function branchPickItems(git: GitRunner, currentBranch: string | undefined): Promise<BranchPickItem[]> {
   const [localOutput, remoteOutput] = await Promise.all([
     safeExec(git, "git for-each-ref --format='%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)' refs/heads"),
-    safeExec(git, 'git branch -r --format="%(refname:short)"')
+    safeExec(git, 'git for-each-ref --format="%(refname:short)%09%(symref)" refs/remotes')
   ]);
 
   const locals: BranchPickItem[] = splitLines(localOutput || '').map((line) => {
@@ -426,17 +436,15 @@ async function branchPickItems(git: GitRunner, currentBranch: string | undefined
     };
   });
 
-  const remotes: BranchPickItem[] = splitLines(remoteOutput || '')
-    .filter((branch) => !branch.endsWith('/HEAD'))
-    .map((branch) => ({
-      label: branch.replace(/^origin\//, ''),
-      description: branch,
-      iconPath: new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.blue')),
-      action: 'branch',
-      branch,
-      branchType: 'remote',
-      current: false
-    }));
+  const remotes: BranchPickItem[] = remoteBranchNames(remoteOutput).map((branch) => ({
+    label: branch.replace(/^origin\//, ''),
+    description: branch,
+    iconPath: new vscode.ThemeIcon('cloud', new vscode.ThemeColor('charts.blue')),
+    action: 'branch',
+    branch,
+    branchType: 'remote',
+    current: false
+  }));
 
   const recent = locals
     .filter((branch) => branch.current || branch.branch === currentBranch)
