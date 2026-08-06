@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
-// Mirrors the "Modify options" dropdown of IntelliJ's Merge dialog. Nothing is selected
-// by default, so the plain `git merge` runs and a fast-forward is allowed - which is what
-// IntelliJ does unless you opt into an option.
+// Mirrors the "Modify options" dropdown of IntelliJ's Merge dialog. These sit behind the
+// explicit "Merge ... with Options" action; the plain Merge action runs a bare `git merge`
+// and allows a fast-forward, which is what IntelliJ's branch popup does.
 export const MERGE_OPTIONS = [
   { flag: '--no-ff', detail: 'Create a merge commit even if the merge could be resolved as a fast-forward.' },
   { flag: '--ff-only', detail: 'Resolve the merge only if it is possible to fast-forward.' },

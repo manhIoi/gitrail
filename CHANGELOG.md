@@ -8,6 +8,7 @@
 - Ignore the result of a commit filter that a newer one has already superseded, instead of letting both finish and letting the loser write back.
 - Remove the phantom `origin` entry from the branch tree and the Branch filter. It was `refs/remotes/origin/HEAD`, whose shortened name is just `origin`, duplicating whatever the remote's default branch points at. The check meant to drop it looked for `HEAD ->` text that `--format` never prints.
 - Send `Compare with Local` and `Compare with <branch>` to the Gitrail Diff view instead of dumping raw `git diff` and `git log` text into an output channel. Every diff and compare action now lands in the same place, as a changed-file tree you can open file by file or Get from.
+- Stop the Merge action asking for merge options every time. IntelliJ's branch popup runs a bare `git merge <branch>` — fast-forward when it can, a merge commit otherwise — so that is what Merge now does. The options moved behind a second entry, `Merge '<branch>' into '<current>' with Options...`, in both the branch menu and the Log View's branch context menu.
 - Show commit times the way IntelliJ does: `just now` and `N minutes ago` within the hour, then `Today 15:53`, `Yesterday 22:45`, and `25/7/26, 01:54`. A bare `15:53` left it ambiguous whether the commit was from today. Relative labels retick every 30 seconds.
 
 ## 0.1.0

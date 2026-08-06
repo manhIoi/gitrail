@@ -34,6 +34,7 @@ type BranchActionItem = vscode.QuickPickItem & {
     | 'diffWithWorkingTree'
     | 'rebaseCurrentOnto'
     | 'mergeIntoCurrent'
+    | 'mergeIntoCurrentWithOptions'
     | 'update'
     | 'push'
     | 'rename'
@@ -470,7 +471,10 @@ async function showBranchActions(
     case 'rebaseCurrentOnto':
       await execGitAction(git, `git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
       return;
-    case 'mergeIntoCurrent': {
+    case 'mergeIntoCurrent':
+      await execGitAction(git, mergeCommand(shellQuote(branch), []), 'Merge completed.');
+      return;
+    case 'mergeIntoCurrentWithOptions': {
       const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
       if (!flags) {
         return;
@@ -523,7 +527,8 @@ function branchActionItems(
     items.push(
       { label: '', kind: vscode.QuickPickItemKind.Separator, action: 'rebaseCurrentOnto' },
       { label: `Rebase '${current}' onto '${branch}'`, action: 'rebaseCurrentOnto' },
-      { label: `Merge '${branch}' into '${current}'`, action: 'mergeIntoCurrent' }
+      { label: `Merge '${branch}' into '${current}'`, action: 'mergeIntoCurrent' },
+      { label: `Merge '${branch}' into '${current}' with Options...`, action: 'mergeIntoCurrentWithOptions' }
     );
   }
 

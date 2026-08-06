@@ -910,7 +910,10 @@ class GitLogController {
       case 'rebaseCurrentOnto':
         await this.runGitAction(`git rebase --autostash ${shellQuote(branch)}`, 'Rebase completed.');
         return;
-      case 'mergeIntoCurrent': {
+      case 'mergeIntoCurrent':
+        await this.runGitAction(mergeCommand(shellQuote(branch), []), 'Merge completed.');
+        return;
+      case 'mergeIntoCurrentWithOptions': {
         const flags = await pickMergeOptions(`Merge ${branch} into ${currentBranch ?? 'HEAD'}`);
         if (!flags) {
           return;
@@ -2931,6 +2934,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         { separator: true },
         { label: 'Rebase ' + current + ' onto ' + selected, action: 'rebaseCurrentOnto', disabled: noCurrent || branch === currentBranch },
         { label: 'Merge ' + selected + ' into ' + current, action: 'mergeIntoCurrent', disabled: noCurrent || branch === currentBranch },
+        { label: 'Merge ' + selected + ' into ' + current + ' with Options...', action: 'mergeIntoCurrentWithOptions', disabled: noCurrent || branch === currentBranch },
         { separator: true },
         { label: 'Update', action: 'update' },
         { label: 'Push...', action: 'push', disabled: isRemote },
