@@ -2,6 +2,8 @@
 
 ## 0.1.2
 
+- Make the branch labels on a commit readable. A branch level with its remote was listed twice and the two labels shared the space, so a row would show `origin/... origin/... ma...` and name nothing. The pair is now one `origin & main` label, the way IntelliJ writes it, and a label will not shrink below the width of an actual branch name — the commit subject gives way instead. `origin/HEAD` no longer appears as a label of its own.
+- Stop the branch context menu cutting its labels flush against the right edge. The shortcut column sized itself to its content and pushed each row wider than the menu, so the overflow landed outside the padding rather than ellipsising inside it. The menu is also a little wider, since its labels carry two branch names.
 - Enlarge the Log View text from 11px to 12px. Every text size now derives from one `--font-size` variable rather than being repeated in seven rules, so branch names, commit subjects, refs, authors and dates all grow together. Row height is unchanged.
 - Remove the phantom `origin` entry from the `Checkout Branch` and `Branches` lists too. 0.1.1 dropped it from the Log View but left it in both quick picks, which read their remote branches separately.
 - Stop the Merge action asking for merge options every time. IntelliJ's branch popup runs a bare `git merge <branch>` — fast-forward when it can, a merge commit otherwise — so that is what merging from a branch menu now does. The options are still there, as the `Gitrail: Merge with Options...` command, which asks for the branch and then the flags. Keeping them out of the branch menus keeps those menus short.

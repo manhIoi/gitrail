@@ -2164,12 +2164,15 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       position: fixed;
       z-index: 50;
       min-width: 320px;
-      max-width: min(560px, calc(100vw - 16px));
+      max-width: min(640px, calc(100vw - 16px));
       padding: 4px 0;
       color: var(--text);
       background: var(--context-bg);
       border: 1px solid var(--context-border);
       border-radius: 6px;
+      /* Clip on the rounded box, not on each row: a row clipped at its own edge cuts the
+         label flush against the padding instead of ellipsising inside it. */
+      overflow: hidden;
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
     }
     .context-menu[hidden] {
@@ -2178,7 +2181,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .context-menu-item {
       width: 100%;
       display: grid;
-      grid-template-columns: 26px minmax(0, 1fr) auto;
+      /* The shortcut track has to be allowed to shrink. Left as bare "auto" it sizes to its
+         content and pushes the row wider than the menu, so the overflow lands past the right
+         padding - which is what made the labels look like they ran off the edge. */
+      grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
       gap: 8px;
       align-items: center;
       min-height: 30px;
@@ -2189,8 +2195,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       text-align: left;
       cursor: pointer;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
     .context-menu-icon {
       width: 18px;
@@ -2208,6 +2212,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       text-overflow: ellipsis;
     }
     .context-menu-shortcut {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       color: var(--muted);
     }
     .context-menu-item:hover,
@@ -2430,10 +2437,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       flex: 0 1 auto;
       gap: 4px;
       min-width: 0;
+      overflow: hidden;
       vertical-align: middle;
     }
     .ref {
-      min-width: 0;
+      /* A chip narrower than this is all ellipsis and no branch name. Holding this floor
+         pushes the shrinking onto .subject-text, which reads fine truncated. */
+      min-width: 90px;
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--ref-color);
@@ -2744,16 +2754,43 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
 
 	    function refLabels(refs) {
-	      if (!refs || refs.length === 0) return '';
-	      return '<span class="refs">' + refs.slice(0, 3).map(renderRefLabel).join('') + '</span>';
+	      const groups = groupRefs(refs);
+	      if (!groups.length) return '';
+	      return '<span class="refs">' + groups.slice(0, 3).map(renderRefLabel).join('') + '</span>';
 	    }
 
-	    function renderRefLabel(ref) {
-	      const name = refName(ref);
-	      const branch = branchesByName.get(name);
+	    // git names every ref pointing at the commit, so a branch that is up to date with its
+	    // remote is listed twice and each label ends up truncated to "origin/..." - three of
+	    // those say nothing. IntelliJ shows one label per branch, writing the pair as
+	    // "origin & main", which is safe here: git only listed both because both are on this
+	    // commit, so there is no divergence to hide. refs/remotes/<remote>/HEAD comes through
+	    // too, shortened to a bare remote name that only duplicates whatever it points at.
+	    function groupRefs(refs) {
+	      const names = (refs || []).map(refName).filter((name) => name && !name.endsWith('/HEAD'));
+	      const isRemote = (name) => branchesByName.get(name)?.type === 'remote';
+	      const remoteOf = new Map();
+	      const paired = new Set();
+	      names.filter(isRemote).forEach((remote) => {
+	        const local = names.find((name) => {
+	          if (isRemote(name) || remoteOf.has(name) || !remote.endsWith('/' + name)) return false;
+	          // What is left has to be the remote's own name, or this pairs a local "feature"
+	          // with an unrelated "origin/my/feature" and invents a remote called "origin/my".
+	          return !remote.slice(0, remote.length - name.length - 1).includes('/');
+	        });
+	        if (!local) return;
+	        remoteOf.set(local, remote.slice(0, remote.length - local.length - 1));
+	        paired.add(remote);
+	      });
+	      return names
+	        .filter((name) => !paired.has(name))
+	        .map((name) => ({ text: remoteOf.has(name) ? remoteOf.get(name) + ' & ' + name : name, branch: name }));
+	    }
+
+	    function renderRefLabel(group) {
+	      const branch = branchesByName.get(group.branch);
 	      const className = branch ? branchStatusClass(branch, 'ref') : 'ref';
 	      const tracking = branch ? trackingText(branch.tracking, true) : '';
-	      return '<span class="' + className + '">' + html(name) + (tracking ? '<span class="ref-track">' + html(tracking) + '</span>' : '') + '</span>';
+	      return '<span class="' + className + '" title="' + html(group.text) + '">' + html(group.text) + (tracking ? '<span class="ref-track">' + html(tracking) + '</span>' : '') + '</span>';
 	    }
 
 	    function refName(ref) {
