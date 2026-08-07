@@ -1807,7 +1807,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       /* Everything textual scales off this. Rows stay 24px tall, which has room to spare at
          this size - going much past 14px would mean moving .commit-row and GRAPH_ROW_H
          together, since the SVG overlay's row pitch has to equal the CSS row height. */
-      --font-size: 12px;
+      --font-size: 13px;
     }
     body.vscode-dark { color-scheme: dark; }
     body.vscode-light {
