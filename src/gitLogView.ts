@@ -1804,6 +1804,10 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       --branch-icon: #69b8f5;
       --current-icon: #f4c542;
       --tag-icon: #8dc9c3;
+      /* Everything textual scales off this. Rows stay 24px tall, which has room to spare at
+         this size - going much past 14px would mean moving .commit-row and GRAPH_ROW_H
+         together, since the SVG overlay's row pitch has to equal the CSS row height. */
+      --font-size: 12px;
     }
     body.vscode-dark { color-scheme: dark; }
     body.vscode-light {
@@ -1828,7 +1832,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       background: var(--bg);
       color: var(--text);
       font-family: var(--vscode-font-family);
-      font-size: 11px;
+      font-size: var(--font-size);
       overflow: hidden;
     }
     button, input {
@@ -2114,7 +2118,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       color: var(--muted);
       font-weight: 700;
       text-transform: uppercase;
-      font-size: 11px;
+      font-size: var(--font-size);
     }
     .branch-list, .commit-list, .file-list {
       overflow: auto;
@@ -2322,7 +2326,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       flex: 0 0 auto;
       margin-left: auto;
       color: var(--muted);
-      font-size: 11px;
+      font-size: var(--font-size);
       font-weight: 700;
       white-space: nowrap;
     }
@@ -2332,7 +2336,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .branch .meta {
       margin-left: auto;
       color: var(--muted);
-      font-size: 11px;
+      font-size: var(--font-size);
     }
     .commit-list {
       height: calc(100vh - 42px);
@@ -2433,7 +2437,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--ref-color);
-      font-size: 11px;
+      font-size: var(--font-size);
       font-weight: 600;
     }
     .branch-hint {
@@ -2446,7 +2450,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       margin-left: auto;
       color: var(--muted);
       opacity: 0.58;
-      font-size: 11px;
+      font-size: var(--font-size);
       font-weight: 600;
       overflow: hidden;
     }
@@ -2478,7 +2482,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .ref-track {
       margin-left: 3px;
-      font-size: 10px;
+      font-size: calc(var(--font-size) - 1px);
       font-weight: 700;
     }
     .author, .date {
