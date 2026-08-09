@@ -1816,6 +1816,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       --branch-icon: #69b8f5;
       --current-icon: #f4c542;
       --tag-icon: #8dc9c3;
+      /* Sits under the row text, so it has to stay well clear of --hover-bg and --selected-bg
+         or a highlighted row reads as selected. */
+      --highlight-bg: rgba(110, 168, 254, 0.13);
       /* Everything textual scales off this. Rows stay 24px tall, which has room to spare at
          this size - going much past 14px would mean moving .commit-row and GRAPH_ROW_H
          together, since the SVG overlay's row pitch has to equal the CSS row height. */
@@ -1835,6 +1838,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       --branch-icon: #0066bb;
       --current-icon: #a06000;
       --tag-icon: #1a7a80;
+      --highlight-bg: rgba(0, 102, 187, 0.10);
     }
     * { box-sizing: border-box; }
     body {
@@ -1892,7 +1896,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       align-items: center;
       height: 42px;
       padding: 6px 8px;
-      border-bottom: 1px solid var(--border);
       background: var(--toolbar-bg);
     }
     .commit-toolbar {
@@ -2377,18 +2380,11 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       height: calc(100vh - 42px);
       position: relative;
     }
-    /* Dimming is done with colour rather than opacity: the graph is an SVG layer sitting above
-       these rows, and giving a row its own opacity makes it a stacking context that composites
-       against that layer. */
-    .commit-list.highlight-current .commit-row[data-off-branch] .subject-text,
-    .commit-list.highlight-current .commit-row[data-off-branch] .author,
-    .commit-list.highlight-current .commit-row[data-off-branch] .date {
-      color: var(--muted);
-      font-weight: 400;
-    }
-    .commit-list.highlight-current .commit-row[data-off-branch] .refs,
-    .commit-list.highlight-current .commit-row[data-off-branch] .branch-hint {
-      opacity: 0.5;
+    /* Tinting the background rather than the text: recolouring the words fights the refs and
+       the merge italics that already carry meaning in this row. Excluded from hover and
+       selection explicitly, so this does not depend on sitting before them in the file. */
+    .commit-list.highlight-current .commit-row:not([data-off-branch]):not(.active):not(:hover) {
+      background: var(--highlight-bg);
     }
     .commit-row {
       display: grid;
@@ -2553,7 +2549,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
     .commit-card {
       padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
       background: var(--card-bg);
     }
     .commit-title {
@@ -2589,7 +2584,6 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       gap: 8px;
       min-height: 42px;
       padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
       background: var(--card-bg);
     }
     .diff-title {
