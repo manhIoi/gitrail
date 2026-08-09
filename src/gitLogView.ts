@@ -2351,6 +2351,13 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       color: var(--muted);
       font-size: var(--font-size);
     }
+    /* Rows are click targets, and clicking a range of them is a drag - which the browser also
+       reads as dragging across text, painting the row blue. Scoped to the rows themselves
+       rather than the panes: the toolbar holds the search input, and the commit card holds a
+       hash worth copying, both of which have to stay selectable. */
+    .tree-row, .branch, .commit-row, .file-row, .context-menu {
+      user-select: none;
+    }
     .commit-list {
       height: calc(100vh - 42px);
       position: relative;
