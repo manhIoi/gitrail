@@ -25,6 +25,10 @@ type Commit = {
   hash: string;
   shortHash: string;
   parents: string[];
+  // Nearest ancestors that survived the filter, so the graph stays joined up when a filter
+  // hides the commits in between. Absent when nothing is filtered, where it would equal
+  // parents. Never used for "is this a merge" or for Go to Parent - those want the real ones.
+  graphParents?: string[];
   branches: string[];
   subject: string;
   author: string;
@@ -1603,7 +1607,84 @@ class GitLogController {
     commits.splice(this.commitLimit);
     await this.prependHashMatch(commits);
     await this.assignCommitBranches(commits, branches);
+    await this.assignGraphParents(commits);
     return { commits, hasMoreCommits };
+  }
+
+  private get commitFilterActive(): boolean {
+    return Boolean(this.commitFilterQuery.trim()) ||
+      this.commitFilterNoMerges ||
+      this.commitFilterUsers.size > 0 ||
+      this.commitFilterBranches.size > 0;
+  }
+
+  // A filter removes commits from the log but not from history, so a row's parent is often no
+  // longer on screen and its lane simply ends - the graph falls apart into loose dots. git does
+  // not rewrite parents for --grep, --author or --no-merges (only path-limited history
+  // simplification does that), so the nearest surviving ancestors are worked out here.
+  private async assignGraphParents(commits: Commit[]): Promise<void> {
+    if (!commits.length || !this.commitFilterActive) {
+      return;
+    }
+
+    // The last row's parents are below the page rather than filtered away, so they do not count
+    // as broken. If nothing above it has lost a parent, a filter happened to match a contiguous
+    // run of history and the walk below would only confirm what is already drawn.
+    const visible = new Set(commits.map((commit) => commit.hash));
+    const broken = commits.some((commit, index) =>
+      index < commits.length - 1 && commit.parents.some((parent) => !visible.has(parent)));
+    if (!broken) {
+      return;
+    }
+
+    // Same target and same ordering as the log, capped, so this is a prefix superset of what is
+    // displayed rather than an unbounded walk: `^oldest` would only subtract oldest's ancestry
+    // and drag in every unrelated branch. A row whose ancestry leaves the window keeps the
+    // behaviour it has today, which is a missing edge - never a wrong one.
+    const window = Math.max(1, this.commitLimit) * 3;
+    let raw: string;
+    try {
+      raw = await this.git.exec(`git rev-list --parents --date-order -n ${window} ${this.buildCommitLogTarget()}`);
+    } catch {
+      return;
+    }
+
+    const parentsOf = new Map<string, string[]>();
+    for (const line of splitLines(raw)) {
+      const [hash, ...rest] = line.trim().split(' ').filter(Boolean);
+      if (hash) parentsOf.set(hash, rest);
+    }
+
+    for (const commit of commits) {
+      commit.graphParents = GitLogController.nearestVisible(commit, visible, parentsOf);
+    }
+  }
+
+  // Walks down through hidden commits to the first visible one on each path. Chains of hidden
+  // merges branch, so the walk is capped in both directions: a graph row can only draw so many
+  // lines before it stops meaning anything, and an unbounded fan-out would hang the render.
+  private static nearestVisible(commit: Commit, visible: Set<string>, parentsOf: Map<string, string[]>): string[] {
+    const maxParents = 4;
+    const maxVisits = 500;
+    const resolved: string[] = [];
+    const seen = new Set<string>([commit.hash]);
+    const queue = [...commit.parents];
+    let visits = 0;
+
+    while (queue.length && resolved.length < maxParents && visits < maxVisits) {
+      const hash = queue.shift() as string;
+      if (seen.has(hash)) continue;
+      seen.add(hash);
+      visits += 1;
+      if (visible.has(hash)) {
+        resolved.push(hash);
+        continue;
+      }
+      const next = parentsOf.get(hash);
+      if (next) queue.push(...next);
+    }
+
+    return resolved;
   }
 
   private async assignCommitBranches(commits: Commit[], branches: Branch[]): Promise<void> {
@@ -3147,7 +3228,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           }
         });
 
-        const parents = commit.parents.filter((parent) => visible.has(parent));
+        const parents = (commit.graphParents || commit.parents).filter((parent) => visible.has(parent));
         if (!parents.length) {
           lanes[commitLane] = null;
         } else {
