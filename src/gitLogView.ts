@@ -1664,7 +1664,9 @@ class GitLogController {
   // merges branch, so the walk is capped in both directions: a graph row can only draw so many
   // lines before it stops meaning anything, and an unbounded fan-out would hang the render.
   private static nearestVisible(commit: Commit, visible: Set<string>, parentsOf: Map<string, string[]>): string[] {
-    const maxParents = 4;
+    // Two, because that is what a node in a git graph can draw: a first parent and a merge
+    // side. Allowing four let chains of hidden merges fan out and tripled the lane count.
+    const maxParents = 2;
     const maxVisits = 500;
     const resolved: string[] = [];
     const seen = new Set<string>([commit.hash]);
@@ -2496,6 +2498,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     .graph-dot {
       stroke-width: 0;
     }
+    .graph-arrow {
+      stroke-width: 0;
+    }
     .graph-dot.merge {
       fill: var(--bg);
       stroke-width: 2;
@@ -3169,6 +3174,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     }
 
     const GRAPH_ROW_H = 24;
+    // How far a link may reach before it is drawn as a pair of arrows instead of a routed lane.
+    const GRAPH_LONG_LINK_ROWS = 4;
     const GRAPH_LANE_W = 12;
     const GRAPH_PAD = 10;
     const GRAPH_COLOR_COUNT = 8;
@@ -3179,9 +3186,19 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
     // its branch line.
     function computeGraphLayout(commits) {
       const visible = new Set(commits.map((commit) => commit.hash));
+      const rowOf = new Map(commits.map((commit, index) => [commit.hash, index]));
       const lanes = []; // slot: { expected, colorIdx, branchedFrom? } | null
       const nodes = [];
       const edges = [];
+      // A link whose ends are far apart holds a lane open across every row in between, and
+      // filtering produces plenty of them - one link here reaches 163 rows. git's own graph
+      // does not route those either. Marked at both ends with an arrow instead, which is what
+      // frees the lanes; the pending map carries the incoming mark until its row is reached.
+      // Only where a filter created them: unfiltered, every parent is on screen where history
+      // put it, and that view stays exactly as it was.
+      const longLinkRows = commits.some((commit) => commit.graphParents) ? GRAPH_LONG_LINK_ROWS : Infinity;
+      const arrows = [];
+      const pendingArrivals = new Map();
       let colorCounter = 0;
       let maxLanes = 1;
 
@@ -3228,7 +3245,21 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           }
         });
 
-        const parents = (commit.graphParents || commit.parents).filter((parent) => visible.has(parent));
+        (pendingArrivals.get(commit.hash) || []).forEach((colorIdx) => {
+          arrows.push({ row, lane: commitLane, colorIdx, direction: 'in' });
+        });
+        pendingArrivals.delete(commit.hash);
+
+        const reachable = (commit.graphParents || commit.parents).filter((parent) => visible.has(parent));
+        const parents = [];
+        reachable.forEach((parent) => {
+          if (rowOf.get(parent) - row > longLinkRows) {
+            arrows.push({ row, lane: commitLane, colorIdx, direction: 'out' });
+            pendingArrivals.set(parent, (pendingArrivals.get(parent) || []).concat(colorIdx));
+            return;
+          }
+          parents.push(parent);
+        });
         if (!parents.length) {
           lanes[commitLane] = null;
         } else {
@@ -3258,7 +3289,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
         nodes.push({ lane: commitLane, colorIdx, merge: commit.parents.length > 1 });
       });
 
-      return { nodes, edges, maxLanes };
+      return { nodes, edges, arrows, maxLanes };
     }
 
     function graphX(lane) {
@@ -3284,6 +3315,17 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
           const c2 = y2 - GRAPH_ROW_H * 0.5;
           pieces.push('<path class="' + cls + '" d="M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + c1 + ', ' + x2 + ' ' + c2 + ', ' + x2 + ' ' + y2 + '"/>');
         }
+      });
+
+      (layout.arrows || []).forEach((arrow) => {
+        const cy = arrow.row * GRAPH_ROW_H + half;
+        const x = graphX(arrow.lane);
+        // Out hangs below its node, in sits above the node it arrives at; both point down, the
+        // direction history runs on screen.
+        const tip = arrow.direction === 'out' ? cy + 11 : cy - 5;
+        const tail = arrow.direction === 'out' ? cy + 5 : cy - 11;
+        pieces.push('<path class="graph-edge ge-' + arrow.colorIdx + '" d="M' + x + ' ' + tail + ' V' + (tip - 3) + '"/>');
+        pieces.push('<path class="graph-arrow gd-' + arrow.colorIdx + '" d="M' + (x - 3) + ' ' + (tip - 4) + ' L' + (x + 3) + ' ' + (tip - 4) + ' L' + x + ' ' + tip + ' Z"/>');
       });
 
       layout.nodes.forEach((node, row) => {
