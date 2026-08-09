@@ -3934,6 +3934,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	    function updateCommitFilterIndicators() {
 	      document.querySelectorAll('[data-filter-dropdown]').forEach((dropdown) => {
 	        const key = dropdown.dataset.filterDropdown;
+	        // The View menu shares this shell but holds booleans, not a set of chosen values, so
+	        // it has no count to show and reading .size off it would throw here.
+	        const selected = commitFilters[key];
+	        if (!selected) {
+	          return;
+	        }
 	        const button = dropdown.querySelector('[data-filter-toggle]');
 	        const label = key === 'branches' ? 'Branch' : 'User';
 	        if (button) {
