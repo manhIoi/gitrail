@@ -2196,6 +2196,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       cursor: pointer;
       white-space: nowrap;
     }
+    /* The branch menu has no icons and no shortcuts, so it is one track wide. Its label still
+       has to be a real element: a bare text node in a grid becomes an anonymous item, lands in
+       the icon track, and overflows it instead of ellipsising. */
+    .context-menu-item.no-icon {
+      grid-template-columns: minmax(0, 1fr);
+    }
     .context-menu-icon {
       width: 18px;
       display: inline-flex;
@@ -3730,7 +3736,9 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       const isCurrent = branchNode.dataset.branchCurrent === 'true';
       menu.innerHTML = branchContextItems(branch, branchType, isCurrent).map((item) => {
         if (item.separator) return '<div class="context-menu-separator" role="separator"></div>';
-        return '<button class="context-menu-item" type="button" data-branch-action="' + html(item.action) + '" ' + (item.disabled ? 'disabled' : '') + ' title="' + html(item.label) + '">' + html(item.label) + '</button>';
+        return '<button class="context-menu-item no-icon" type="button" data-branch-action="' + html(item.action) + '" ' + (item.disabled ? 'disabled' : '') + ' title="' + html(item.label) + '">' +
+          '<span class="context-menu-label">' + html(item.label) + '</span>' +
+        '</button>';
       }).join('');
 
       menu.querySelectorAll('[data-branch-action]').forEach((item) => {
