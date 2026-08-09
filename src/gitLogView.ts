@@ -93,6 +93,7 @@ type WebviewMessage = {
   regex?: boolean;
   users?: string[];
   branches?: string[];
+  noMerges?: boolean;
   focused?: boolean;
   open?: boolean;
 };
@@ -624,6 +625,7 @@ class GitLogController {
   private commitFilterRegex = false;
   private commitFilterUsers = new Set<string>();
   private commitFilterBranches = new Set<string>();
+  private commitFilterNoMerges = false;
   private readonly outputChannel = vscode.window.createOutputChannel('Gitrail Git');
 
   constructor(
@@ -711,6 +713,7 @@ class GitLogController {
         this.commitFilterRegex = Boolean(message.regex);
         this.commitFilterUsers = new Set(message.users || []);
         this.commitFilterBranches = new Set(message.branches || []);
+        this.commitFilterNoMerges = Boolean(message.noMerges);
         this.commitLimit = GitLogController.commitPageSize;
         // Searching is how you reach an old commit, so the one just picked out of the results
         // is usually deeper than a fresh page. Rebuilding from the newest page alone would
@@ -1536,6 +1539,9 @@ class GitLogController {
     const query = this.commitFilterQuery.trim();
     const needsRegexFlags = Boolean(query) || this.commitFilterUsers.size > 0;
     const args: string[] = [];
+    if (this.commitFilterNoMerges) {
+      args.push('--no-merges');
+    }
     if (needsRegexFlags) {
       // A single regex flavor (ERE) is used for both --grep and --author, since git
       // applies --fixed-strings/--extended-regexp/-i uniformly to both. "Non-regex"
@@ -1568,6 +1574,12 @@ class GitLogController {
       const format = '%x1f%H%x1f%P%x1f%an%x1f%ad%x1f%D%x1f%s';
       const raw = await this.git.exec(`git log --date-order --date=iso-strict --pretty=format:${shellQuote(format)} -1 ${shellQuote(query)}`);
       const commit = parseCommitLine(raw.split(/\r?\n/)[0] || '');
+      // This lookup bypasses the log's filters by design - pasting a hash should find the
+      // commit. "No merge commits" is the one filter that must still hold, or the toggle
+      // leaks back the single row it was asked to hide.
+      if (this.commitFilterNoMerges && commit && commit.parents.length > 1) {
+        return;
+      }
       if (commit && !commits.some((existing) => existing.hash === commit.hash)) {
         commits.unshift(commit);
       }
@@ -1856,11 +1868,14 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       user-select: none;
       z-index: 20;
     }
+    /* No divider at rest - the panes read as one surface. The handle still occupies its 6px,
+       so the drag target is unchanged; it only becomes visible once you are on it. */
     .pane-resizer::before {
       content: '';
       position: absolute;
       inset: 0 2px;
-      background: var(--border);
+      background: transparent;
+      transition: background 120ms ease;
     }
     .pane-resizer:hover::before,
     .pane-resizer.dragging::before {
@@ -2362,6 +2377,19 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       height: calc(100vh - 42px);
       position: relative;
     }
+    /* Dimming is done with colour rather than opacity: the graph is an SVG layer sitting above
+       these rows, and giving a row its own opacity makes it a stacking context that composites
+       against that layer. */
+    .commit-list.highlight-current .commit-row[data-off-branch] .subject-text,
+    .commit-list.highlight-current .commit-row[data-off-branch] .author,
+    .commit-list.highlight-current .commit-row[data-off-branch] .date {
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .commit-list.highlight-current .commit-row[data-off-branch] .refs,
+    .commit-list.highlight-current .commit-row[data-off-branch] .branch-hint {
+      opacity: 0.5;
+    }
     .commit-row {
       display: grid;
       grid-template-columns: var(--graph-col, 48px) minmax(100px, 1fr) 150px 120px;
@@ -2644,6 +2672,12 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      branches: new Set(persistedViewState.commitFilters?.branches || []),
 	      users: new Set(persistedViewState.commitFilters?.users || [])
 	    };
+	    // Highlighting is decided in the browser from data already on each row; No merge
+	    // commits is a git argument and has to go back to the extension.
+	    const viewOptions = {
+	      highlightCurrentBranch: Boolean(persistedViewState.viewOptions?.highlightCurrentBranch),
+	      noMerges: Boolean(persistedViewState.viewOptions?.noMerges)
+	    };
 	    const paneSizes = {
 	      sidebar: persistedViewState.paneSizes?.sidebar || 280,
 	      detail: persistedViewState.paneSizes?.detail || 420
@@ -2677,7 +2711,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        matchCase: commitFilters.matchCase,
 	        regex: commitFilters.regex,
 	        users: Array.from(commitFilters.users),
-	        branches: Array.from(commitFilters.branches)
+	        branches: Array.from(commitFilters.branches),
+	        noMerges: viewOptions.noMerges
 	      });
 	    }
 
@@ -2704,6 +2739,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          branches: Array.from(commitFilters.branches),
 	          users: Array.from(commitFilters.users)
 	        },
+	        viewOptions,
 	        paneSizes,
 	        scrollTops,
 	        selectedCommits: Array.from(selectedCommitHashes),
@@ -2874,6 +2910,40 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      '</div>';
 	    }
 
+	    // Same shell as the Branch and User dropdowns, so opening it closes them, clicking away
+	    // closes it, and reportOverlayState() already knows to hold refreshes back while it is
+	    // open. The options are booleans rather than a set, so they get their own attribute and
+	    // handler instead of riding on data-filter-option.
+	    function renderViewOptionsDropdown() {
+	      const items = [
+	        {
+	          key: 'highlightCurrentBranch',
+	          label: 'Highlight commits on ' + (currentBranch ? "'" + currentBranch + "'" : 'current branch'),
+	          // With a detached HEAD there is no branch to compare against, and every row would
+	          // dim at once - which reads as a broken panel rather than a highlight.
+	          disabled: !currentBranch,
+	          title: currentBranch ? 'Dim commits that are not on ' + currentBranch : 'HEAD is detached, so there is no current branch'
+	        },
+	        { key: 'noMerges', label: 'No merge commits', disabled: false, title: 'Hide commits with more than one parent' }
+	      ];
+	      const active = items.some((item) => !item.disabled && viewOptions[item.key]);
+	      return '<div class="filter-dropdown" data-filter-dropdown="view">' +
+	        '<button class="filter-dropdown-button' + (active ? ' active' : '') + '" type="button" data-filter-toggle="view">' +
+	          '<span class="filter-label">View</span><span class="filter-chevron" aria-hidden="true"></span>' +
+	        '</button>' +
+	        '<div class="filter-menu">' +
+	          items.map((item) =>
+	            '<label class="filter-option" title="' + html(item.title) + '">' +
+	              '<input type="checkbox" data-view-option="' + html(item.key) + '"' +
+	                (viewOptions[item.key] && !item.disabled ? ' checked' : '') +
+	                (item.disabled ? ' disabled' : '') + '>' +
+	              '<span>' + html(item.label) + '</span>' +
+	            '</label>'
+	          ).join('') +
+	        '</div>' +
+	      '</div>';
+	    }
+
 	    function renderCommitToolbar() {
 	      return '<div class="toolbar commit-toolbar">' +
 	        '<div class="commit-search-wrap">' +
@@ -2885,6 +2955,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        '</div>' +
 	        renderFilterDropdown('branches', 'Branch', currentBranch ? [{ value: currentBranch, display: 'HEAD' }] : [], branchFilterOptions(), commitFilters.branches) +
 	        renderFilterDropdown('users', 'User', state.currentUser ? [{ value: state.currentUser, display: 'Me' }] : [], userFilterOptions(), commitFilters.users) +
+	        renderViewOptionsDropdown() +
 	        '<span class="toolbar-spacer"></span>' +
 	        '<button id="goToHead" class="icon-button" type="button" title="Go to branch head (selected branch or current)">' + targetIcon() + '</button>' +
 	        '</div>';
@@ -3199,7 +3270,8 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	      commits.forEach((commit) => {
 	        const active = selectedCommitHashes.has(commit.hash);
 	        const isMerge = commit.parents.length > 1;
-	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '" title="' + html(commitTooltip(commit)) + '">' +
+	        const offBranch = currentBranch && !(commit.branches || []).includes(currentBranch);
+	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '"' + (offBranch ? ' data-off-branch="1"' : '') + ' title="' + html(commitTooltip(commit)) + '">' +
           '<div class="graph-cell"></div>' +
           '<div class="subject"><span class="subject-text">' + html(commit.subject) + '</span>' + refLabels(commit.refs) + commitBranchHint(commit) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
@@ -3345,6 +3417,7 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
       app.style.setProperty('--sidebar-width', paneSizes.sidebar + 'px');
       app.style.setProperty('--detail-width', paneSizes.detail + 'px');
       document.getElementById('commits').style.setProperty('--graph-col', commitsView.graphWidth + 'px');
+      applyHighlightCurrentBranch();
       wire();
       restoreScrollPositions();
     }
@@ -3667,6 +3740,24 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	        });
 	      });
 
+	      document.querySelectorAll('[data-view-option]').forEach((node) => {
+	        node.addEventListener('click', (event) => event.stopPropagation());
+	        node.addEventListener('change', () => {
+	          const key = node.dataset.viewOption;
+	          viewOptions[key] = node.checked;
+	          persistViewState();
+	          // Highlighting needs no git, so it lands immediately. Hiding merges changes what
+	          // the log is asked for, so it goes back to the extension like any other filter.
+	          if (key === 'noMerges') {
+	            sendCommitFilters();
+	          } else {
+	            applyHighlightCurrentBranch();
+	          }
+	          const button = node.closest('[data-filter-dropdown]')?.querySelector('.filter-dropdown-button');
+	          if (button) button.classList.toggle('active', viewOptions.highlightCurrentBranch || viewOptions.noMerges);
+	        });
+	      });
+
 	      document.querySelectorAll('[data-filter-option]').forEach((node) => {
 	        node.addEventListener('click', (event) => event.stopPropagation());
 	        node.addEventListener('change', () => {
@@ -3685,6 +3776,11 @@ function renderHtml(webview: vscode.Webview, state: ViewState): string {
 	          sendCommitFilters();
 	        });
 	      });
+	    }
+
+	    function applyHighlightCurrentBranch() {
+	      const list = document.getElementById('commits');
+	      if (list) list.classList.toggle('highlight-current', Boolean(currentBranch) && viewOptions.highlightCurrentBranch);
 	    }
 
 	    function closeFilterDropdowns() {
