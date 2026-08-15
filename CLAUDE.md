@@ -21,22 +21,45 @@ There are no automated tests. Manual testing is done by pressing `F5` in VS Code
 
 ## Architecture
 
-Three source files in `src/`:
+Top level of `src/`:
 
 | File | Role |
 |------|------|
 | `extension.ts` | Entry point. Registers all 15 commands. Each command calls helpers that use `GitRunner`. |
 | `gitRunner.ts` | `GitRunner` class — two modes: `run()` sends a command to a persistent VS Code terminal; `exec()` runs a command with `child_process.exec` and returns stdout. Also exports `shellQuote()`. |
-| `gitLogView.ts` | Singleton webview panel (`giProLog`). `GitLogController` loads state (branches, commits, commit detail + patch) and renders everything as a single self-contained HTML string with embedded CSS and JS. |
+| `gitLogView.ts` | Registration only — wires up the Log View provider and the branch-diff tree, and exposes `GitProContentProvider`. This is the module `extension.ts` imports. |
+| `branchNames.ts` | Branch/ref naming shared by the commands and the panel: `suggestBranchName`, `prefilledBranchName`, `validateBranchName`, `validateRefName`, `remoteBranchParts`. |
+| `webviewUtil.ts` | `getNonce()`, shared by both webviews. |
+| `historyView.ts`, `inlineBlame.ts`, `mergeOptions.ts`, `rebaseEditor.ts` | Independent features. |
+
+The Git Log panel lives in `src/logView/`:
+
+| File | Role |
+|------|------|
+| `controller.ts` | `GitLogController` — loads state (branches, commits, commit detail + patch) and handles every message the webview posts. The bulk of the panel. |
+| `provider.ts` | `GitLogViewProvider` — resolves the webview, watches the repo for refreshes, defers them while a menu or input is open. |
+| `branchDiff.ts` | The branch-diff tree in the SCM view: provider, tree items, and its own command registration. |
+| `html.ts` | The HTML shell: CSP, nonce, and the `<link>`/`<script>` pointing at `media/`. |
+| `controller`'s inputs: `types.ts`, `parse.ts`, `prompts.ts`, `extensionHome.ts` | Shared types, git output parsing, VS Code prompts, and the extension install root. |
+
+The panel's front end is **not** in `src/` — it is two plain files loaded through `asWebviewUri`:
+
+- `media/logView.css`
+- `media/logView.js`
 
 ### Key design decisions
 
 - **`run()` vs `exec()`**: `run()` is for commands where terminal output is the UX (push, pull, rebase, etc.). `exec()` is for commands that need to parse stdout to build UI (branch list, commit log, file list).
-- **Webview rendering**: `gitLogView.ts` renders the entire panel as server-side HTML each time state changes; there is no framework. The webview JS posts messages (`selectBranch`, `selectCommit`, `selectFile`, `checkout`, `cherryPick`, `copyHash`, `refresh`) back to `GitLogController.handleMessage()`.
-- **Security**: The webview uses a per-render nonce and a strict CSP (`default-src 'none'`). All dynamic content is escaped through an `html()` helper in the embedded JS.
+- **Webview rendering**: `media/logView.js` renders the whole panel client-side from a state object; there is no framework. It posts messages (`selectBranch`, `selectCommit`, `selectFile`, `checkout`, `cherryPick`, `copyHash`, `refresh`) back to `GitLogController.handleMessage()`.
+- **State handoff**: `html.ts` emits the state as an inline `<script>` setting `window.__gitrailState`, which `media/logView.js` reads on its first line. The external script must stay after that inline one.
+- **Security**: The webview uses a per-render nonce and a strict CSP (`default-src 'none'`). The nonce is carried on the external `<link>` and `<script>`, so the CSP needs no host source. All dynamic content is escaped through an `html()` helper in `media/logView.js`.
 - **Graph rendering**: The git graph is rendered as an SVG overlay (`.graph-layer`) positioned absolutely over the commit list. Each character from `git log --graph` is mapped to SVG paths and circles in `renderGraphLayer()`.
 - **No extension dependencies**: The extension does not depend on VS Code's built-in Git extension; it shells out directly.
 
+### Verifying webview changes
+
+`tsc` does not look at `media/logView.js` at all, so a green compile says nothing about it. To check a change, render `renderHtml` outside VS Code (stub the `vscode` module, pin `Math.random` so the nonce is stable), inline the two `media/` files into the page, and load it in headless Chrome asserting on `.commit-row` / `.file-row` / `.branch` counts and zero `window.onerror` events.
+
 ### Commit log format
 
-`gitLogView.ts` uses `\x1f` (ASCII unit separator) as a field delimiter within `git log --pretty=format:` to avoid conflicts with commit message content, then splits graph characters from the leading portion of each line.
+`logView/parse.ts` uses `\x1f` (ASCII unit separator) as a field delimiter within `git log --pretty=format:` to avoid conflicts with commit message content, then splits graph characters from the leading portion of each line.
