@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Add `Gitrail: New Branch...` as a command. Creating a branch was only reachable by opening `Gitrail: Branches` and picking `+ New Branch...` from the list, so it never appeared in the Command Palette and there was nothing to bind a keyboard shortcut to. It behaves exactly as that list entry did — branches from HEAD, with the name prefilled from the current branch.
+
 ## 0.1.3
 
 - Prefill the `New Branch` prompt with a name derived from the ref the branch starts at, selected end to end so it can be typed straight over or edited in place. Branching off `feature/login` opens with `feature/login` already in the box, so the prefix your convention dictates does not have to be retyped. Branching off a remote drops the remote — `origin/feature/login` becomes `feature/login`, the local name the branch would get anyway — and branching off a long-lived branch (`main`, `develop`, and so on) prefills nothing, since its name says nothing about what the new branch should be called. Applies to `New Branch` from a branch, from a commit, and from HEAD, in both the Log View and the command palette.

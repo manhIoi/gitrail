@@ -72,6 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
     { id: 'giPro.stash', handler: () => stash(git) },
     { id: 'giPro.stashPop', handler: () => stashPop(git) },
     { id: 'giPro.checkoutBranch', handler: () => checkoutBranch(git) },
+    { id: 'giPro.newBranch', handler: () => newBranchFromHead(git) },
     { id: 'giPro.branches', handler: () => branches(context, git) },
     { id: 'giPro.compareFileWithHead', handler: () => compareFileWithHead(git) },
     { id: 'giPro.showFileHistory', handler: () => showFileHistory(git) },
