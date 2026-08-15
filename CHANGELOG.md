@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- Stop a branch that is behind turning its whole row one colour. The branch glyph, the arrow and the count were all painted with the same orange, so a row that was merely out of date read as a warning and the glyph stopped saying "branch" at all. The glyph now keeps its blue in every tracking state, the way IntelliJ's branch popup does, and only the small direction arrow carries the state — `↓` in coral when behind, `↑` in blue when ahead. The count beside it is a number, so it now sits in the row's ordinary text colour and is read rather than decoded.
+- Brighten the star on the current branch in the light theme, to the gold IntelliJ uses. It had been sharing a token with the current branch's ref label on a commit row, which is 12px text and needs a text contrast ratio; they are separate now, so the star can be a bright `#f5c344` while the label stays readable at `#b45309`.
+
 ## 0.1.5
 
 - Lift the branch icon colours in the light theme, which had been darkened past the point where they still read as the colour they were meant to be. A branch that is behind, and the star on the current branch, were `#8a6000` and `#a06000` — yellow at 27% lightness, which reads as olive mud rather than amber. They are now a single amber `#b45309`, ten points lighter and rotated away from the olive band, still clear of the red that marks a deleted file. The branch icon blue is lifted a little too, `#0066bb` to `#0072d1`, at the same hue. Every one of these stays above the 4.5:1 contrast ratio on white. The dark theme is untouched; its equivalents were already bright.

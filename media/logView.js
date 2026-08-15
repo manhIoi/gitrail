@@ -203,12 +203,14 @@
 	        if (ahead) return 'track-ahead';
 	        return '';
 	      }
-	      const prefix = target === 'ref' ? 'ref ' : 'tree-icon ';
-	      if (branch?.current) return prefix + (target === 'ref' ? 'current-ref' : 'current-icon');
-	      if (ahead && behind) return prefix + (target === 'ref' ? 'diverged-ref' : 'diverged-icon');
-	      if (behind) return prefix + (target === 'ref' ? 'behind-ref' : 'behind-icon');
-	      if (ahead) return prefix + (target === 'ref' ? 'ahead-ref' : 'ahead-icon');
-	      return prefix + (target === 'ref' ? '' : 'branch-icon');
+	      if (target === 'tree') {
+	        return branch?.current ? 'tree-icon current-icon' : 'tree-icon branch-icon';
+	      }
+	      if (branch?.current) return 'ref current-ref';
+	      if (ahead && behind) return 'ref diverged-ref';
+	      if (behind) return 'ref behind-ref';
+	      if (ahead) return 'ref ahead-ref';
+	      return 'ref ';
 	    }
 
 	    function branchFilterOptions() {
@@ -358,11 +360,20 @@
     }
 
     function renderBranchStatus(branch) {
-      const tracking = trackingText(branch.tracking, false);
-      if (!tracking) return '';
+      const ahead = Number(branch.tracking?.ahead || 0);
+      const behind = Number(branch.tracking?.behind || 0);
+      if (!ahead && !behind) return '';
       const statusClass = branchStatusClass(branch, 'status');
+      // The arrow and the count are separate spans so the direction can be marked without
+      // recolouring the number, which is text and wants to stay readable.
+      const part = (arrow, count) =>
+        '<span class="track-part">' +
+          '<span class="track-arrow">' + arrow + '</span>' +
+          '<span class="track-count">' + count + '</span>' +
+        '</span>';
       return '<span class="branch-status ' + statusClass + '">' +
-        '<span>' + html(tracking) + '</span>' +
+        (behind ? part('↓', behind) : '') +
+        (ahead ? part('↑', ahead) : '') +
       '</span>';
     }
 

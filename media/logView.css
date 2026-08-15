@@ -28,6 +28,15 @@
       --hunk-color: #91b4ff;
       --branch-icon: #69b8f5;
       --current-icon: #f4c542;
+      /* Stated literally per theme, never as var(--orange): a custom property that
+         references another is resolved where it is declared, so an alias here would freeze
+         the dark value and body.vscode-light below could never override it. */
+      --behind-arrow: #ef8f6f;
+      --ahead-arrow: #69b8f5;
+      /* Separate from --current-icon, which also colours the current branch's ref label on
+         a commit row. That label is 12px text and needs a text contrast ratio; the star is
+         a filled glyph read by its shape, so it can be brighter than text ever could. */
+      --star-icon: #f4c542;
       --tag-icon: #8dc9c3;
       /* Sits under the row text, so it has to stay well clear of --hover-bg and --selected-bg
          or a highlighted row reads as selected. */
@@ -50,6 +59,9 @@
       --hunk-color: #0066bb;
       --branch-icon: #0072d1;
       --current-icon: #b45309;
+      --behind-arrow: #d9553a;
+      --ahead-arrow: #0072d1;
+      --star-icon: #f5c344;
       --tag-icon: #1a7a80;
       --highlight-bg: rgba(0, 102, 187, 0.10);
     }
@@ -526,19 +538,7 @@
       font-size: 15px;
     }
     .tree-icon.current-icon {
-      color: var(--current-icon);
-      font-size: 15px;
-    }
-    .tree-icon.behind-icon {
-      color: var(--orange);
-      font-size: 15px;
-    }
-    .tree-icon.ahead-icon {
-      color: var(--branch-icon);
-      font-size: 15px;
-    }
-    .tree-icon.diverged-icon {
-      color: var(--purple);
+      color: var(--star-icon);
       font-size: 15px;
     }
     .tree-icon.tag-icon {
@@ -574,9 +574,17 @@
       font-weight: 700;
       white-space: nowrap;
     }
-    .track-behind { color: var(--orange); }
-    .track-ahead { color: var(--branch-icon); }
-    .track-diverged { color: var(--purple); }
+    .track-part {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    /* The arrow marks the direction; the count stays in the row's own text colour so a
+       number never has to be read at an icon's contrast. */
+    .track-count { color: var(--text); }
+    .track-behind .track-arrow { color: var(--behind-arrow); }
+    .track-ahead .track-arrow { color: var(--ahead-arrow); }
+    .track-diverged .track-arrow { color: var(--purple); }
     .branch .meta {
       margin-left: auto;
       color: var(--muted);
