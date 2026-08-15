@@ -41,15 +41,15 @@
     body.vscode-light {
       color-scheme: light;
       --green: #1e7a1e;
-      --orange: #8a6000;
+      --orange: #b45309;
       --red: #bc2929;
       --purple: #5c2d91;
       --ref-color: #5c2d91;
       --add-color: #1e7a1e;
       --del-color: #bc2929;
       --hunk-color: #0066bb;
-      --branch-icon: #0066bb;
-      --current-icon: #a06000;
+      --branch-icon: #0072d1;
+      --current-icon: #b45309;
       --tag-icon: #1a7a80;
       --highlight-bg: rgba(0, 102, 187, 0.10);
     }

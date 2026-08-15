@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Lift the branch icon colours in the light theme, which had been darkened past the point where they still read as the colour they were meant to be. A branch that is behind, and the star on the current branch, were `#8a6000` and `#a06000` — yellow at 27% lightness, which reads as olive mud rather than amber. They are now a single amber `#b45309`, ten points lighter and rotated away from the olive band, still clear of the red that marks a deleted file. The branch icon blue is lifted a little too, `#0066bb` to `#0072d1`, at the same hue. Every one of these stays above the 4.5:1 contrast ratio on white. The dark theme is untouched; its equivalents were already bright.
+
 ## 0.1.4
 
 - Add `Gitrail: New Branch...` as a command. Creating a branch was only reachable by opening `Gitrail: Branches` and picking `+ New Branch...` from the list, so it never appeared in the Command Palette and there was nothing to bind a keyboard shortcut to. It behaves exactly as that list entry did — branches from HEAD, with the name prefilled from the current branch.
