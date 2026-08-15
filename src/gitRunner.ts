@@ -83,3 +83,24 @@ export class GitRunner {
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+
+// Branches that exist to be branched off, so their own names say nothing about how the
+// new branch should be named.
+const LONG_LIVED_BRANCHES = new Set(['main', 'master', 'develop', 'development', 'dev', 'trunk']);
+
+/**
+ * Prefill for a "New Branch" prompt, derived from the ref the branch starts at so the
+ * naming convention is already in the box and only the parts that differ need editing.
+ * A remote ref drops its remote (`origin/feature/login` → `feature/login`), which is the
+ * local name it would get anyway. A long-lived base branch prefills nothing.
+ */
+export function suggestBranchName(base: string | undefined, branchType: 'local' | 'remote' = 'local'): string {
+  const trimmed = (base ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (branchType === 'remote') {
+    return trimmed.split('/').slice(1).join('/');
+  }
+  return LONG_LIVED_BRANCHES.has(trimmed.toLowerCase()) ? '' : trimmed;
+}

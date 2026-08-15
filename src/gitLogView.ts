@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { GitRunner, shellQuote } from './gitRunner';
+import { GitRunner, shellQuote, suggestBranchName } from './gitRunner';
 import { mergeCommand } from './mergeOptions';
 
 type Branch = {
@@ -899,7 +899,7 @@ class GitLogController {
         this.selectedBranch = branch;
         return;
       case 'newBranchFrom':
-        await this.newBranchFrom(branch);
+        await this.newBranchFrom(branch, branchType);
         return;
       case 'checkoutRebaseOnto':
         if (currentBranch) {
@@ -944,12 +944,12 @@ class GitLogController {
     await this.runGitAction(command, 'Branch checked out.');
   }
 
-  private async newBranchFrom(branch: string): Promise<void> {
+  private async newBranchFrom(branch: string, branchType: Branch['type'] | undefined): Promise<void> {
     const name = await vscode.window.showInputBox({
       prompt: `New branch from ${branch}`,
       placeHolder: 'feature/my-branch',
       ignoreFocusOut: true,
-      validateInput: validateBranchName
+      ...prefilledBranchName(branch, branchType === 'remote' ? 'remote' : 'local')
     });
     if (name) {
       await this.runGitAction(`git checkout -b ${shellQuote(name)} ${shellQuote(branch)}`, 'Branch created.');
@@ -958,11 +958,12 @@ class GitLogController {
   }
 
   private async newBranchFromCommit(hash: string): Promise<void> {
+    const currentBranch = await this.getCurrentBranch();
     const name = await vscode.window.showInputBox({
       prompt: `New branch from ${hash.slice(0, 8)}`,
       placeHolder: 'feature/my-branch',
       ignoreFocusOut: true,
-      validateInput: validateBranchName
+      ...prefilledBranchName(currentBranch)
     });
     if (name) {
       await this.runGitAction(`git checkout -b ${shellQuote(name)} ${hash}`, 'Branch created.');
@@ -976,7 +977,7 @@ class GitLogController {
       prompt: currentBranch ? `New branch from ${currentBranch}` : 'New branch from HEAD',
       placeHolder: 'feature/my-branch',
       ignoreFocusOut: true,
-      validateInput: validateBranchName
+      ...prefilledBranchName(currentBranch)
     });
     if (name) {
       await this.runGitAction(`git checkout -b ${shellQuote(name)}`, 'Branch created.');
@@ -4289,6 +4290,21 @@ function escapeRegExpLiteral(value: string): string {
 
 function isCommitHash(value: string | undefined): value is string {
   return Boolean(value && /^[a-f0-9]{7,40}$/i.test(value));
+}
+
+type BranchNamePrefill = Pick<vscode.InputBoxOptions, 'value' | 'valueSelection' | 'validateInput'>;
+
+/**
+ * Seeds a New Branch prompt with a name derived from `base`, selected end to end so it can be
+ * typed straight over or edited in place.
+ */
+function prefilledBranchName(base: string | undefined, branchType: 'local' | 'remote' = 'local'): BranchNamePrefill {
+  const suggestion = suggestBranchName(base, branchType);
+  return {
+    value: suggestion,
+    valueSelection: [0, suggestion.length],
+    validateInput: validateBranchName
+  };
 }
 
 function validateBranchName(value: string): string | undefined {

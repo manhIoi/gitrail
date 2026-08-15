@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { showBranchDiffWithWorkingTree, showGitLogView, GitProContentProvider, registerGitLogView } from './gitLogView';
-import { GitRunner, shellQuote } from './gitRunner';
+import { GitRunner, shellQuote, suggestBranchName } from './gitRunner';
 import { registerHistoryView, showFileHistoryView, showSelectionHistoryView } from './historyView';
 import { registerInlineBlame } from './inlineBlame';
 import { mergeCommand, pickMergeOptions } from './mergeOptions';
@@ -403,11 +403,12 @@ async function checkoutBranchItems(git: GitRunner): Promise<BranchPickItem[]> {
 }
 
 async function newBranchFromHead(git: GitRunner): Promise<void> {
+  const currentBranch = await getCurrentBranch(git);
   const name = await vscode.window.showInputBox({
-    prompt: 'New branch from HEAD',
+    prompt: currentBranch ? `New branch from ${currentBranch}` : 'New branch from HEAD',
     placeHolder: 'feature/my-branch',
     ignoreFocusOut: true,
-    validateInput: validateBranchName
+    ...prefilledBranchName(currentBranch)
   });
   if (name) {
     await execGitAction(git, `git checkout -b ${shellQuote(name)}`, `Created and checked out ${name}.`);
@@ -486,7 +487,7 @@ async function showBranchActions(
       await checkoutSelectedBranch(git, branch, branchType);
       return;
     case 'newBranchFrom':
-      await newBranchFromRef(git, branch);
+      await newBranchFromRef(git, branch, branchType);
       return;
     case 'checkoutRebaseOnto':
       if (currentBranch) {
@@ -580,12 +581,12 @@ async function checkoutSelectedBranch(git: GitRunner, branch: string, branchType
   await execGitAction(git, command, 'Branch checked out.');
 }
 
-async function newBranchFromRef(git: GitRunner, ref: string): Promise<void> {
+async function newBranchFromRef(git: GitRunner, ref: string, branchType: 'local' | 'remote' = 'local'): Promise<void> {
   const name = await vscode.window.showInputBox({
     prompt: `New branch from ${ref}`,
     placeHolder: 'feature/my-branch',
     ignoreFocusOut: true,
-    validateInput: validateBranchName
+    ...prefilledBranchName(ref, branchType)
   });
   if (name) {
     await execGitAction(git, `git checkout -b ${shellQuote(name)} ${shellQuote(ref)}`, `Created and checked out ${name}.`);
@@ -869,6 +870,21 @@ function remoteBranchParts(branch: string): { remote: string; name: string } | u
     return undefined;
   }
   return { remote, name: parts.join('/') };
+}
+
+type BranchNamePrefill = Pick<vscode.InputBoxOptions, 'value' | 'valueSelection' | 'validateInput'>;
+
+/**
+ * Seeds a New Branch prompt with a name derived from `base`, selected end to end so it can be
+ * typed straight over or edited in place.
+ */
+function prefilledBranchName(base: string | undefined, branchType: 'local' | 'remote' = 'local'): BranchNamePrefill {
+  const suggestion = suggestBranchName(base, branchType);
+  return {
+    value: suggestion,
+    valueSelection: [0, suggestion.length],
+    validateInput: validateBranchName
+  };
 }
 
 function validateBranchName(value: string): string | undefined {
