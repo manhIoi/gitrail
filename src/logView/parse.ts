@@ -78,11 +78,3 @@ export function escapeRegExpLiteral(value: string): string {
 export function isCommitHash(value: string | undefined): value is string {
   return Boolean(value && /^[a-f0-9]{7,40}$/i.test(value));
 }
-export function remoteBranchParts(branch: string): { remote: string; name: string } | undefined {
-  const [remote, ...parts] = branch.split('/');
-  const name = parts.join('/');
-  if (!remote || !name) {
-    return undefined;
-  }
-  return { remote, name };
-}

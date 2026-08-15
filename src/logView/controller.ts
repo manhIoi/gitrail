@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { prefilledBranchName, remoteBranchParts, validateBranchName, validateRefName } from '../branchNames';
 import { GitRunner, shellQuote } from '../gitRunner';
 import { mergeCommand } from '../mergeOptions';
 import { showBranchDiffInScm } from './branchDiff';
@@ -9,9 +10,9 @@ import { extensionUri } from './extensionHome';
 import { renderHtml } from './html';
 import {
   escapeRegExpLiteral, isBranchNotFullyMergedError, isCommitHash, parseChangedFile,
-  parseCommitLine, parseTrackingStatus, pathExistsInRef, remoteBranchParts, resolveGitDir, splitLines
+  parseCommitLine, parseTrackingStatus, pathExistsInRef, resolveGitDir, splitLines
 } from './parse';
-import { pickResetMode, prefilledBranchName, validateBranchName, validateRefName } from './prompts';
+import { pickResetMode } from './prompts';
 import type {
   Branch, BranchDiff, ChangedFile, Commit, CommitDetail, ViewState, WebviewMessage
 } from './types';
@@ -743,7 +744,7 @@ export class GitLogController {
   }
 
   private async getFileFromBranch(branch: string, filePath: string): Promise<void> {
-    if (await this.pathExistsInRef(branch, filePath)) {
+    if (await pathExistsInRef(this.git, branch, filePath)) {
       await this.runGitAction(`git checkout ${shellQuote(branch)} -- ${shellQuote(filePath)}`, `Got ${filePath} from ${branch}.`);
       return;
     }
@@ -777,7 +778,7 @@ export class GitLogController {
     const existing: string[] = [];
     const missing: string[] = [];
     for (const file of diff.files) {
-      if (await this.pathExistsInRef(branch, file.path)) {
+      if (await pathExistsInRef(this.git, branch, file.path)) {
         existing.push(file.path);
       } else {
         missing.push(file.path);
@@ -793,15 +794,6 @@ export class GitLogController {
       await this.runGitAction(`git rm -f -- ${paths}`);
     }
     vscode.window.showInformationMessage(`Got ${diff.files.length} file${diff.files.length === 1 ? '' : 's'} from ${branch}.`);
-  }
-
-  private async pathExistsInRef(ref: string, filePath: string): Promise<boolean> {
-    try {
-      await this.git.exec(`git cat-file -e ${shellQuote(ref + ':' + filePath)}`);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   private async loadState(): Promise<ViewState> {

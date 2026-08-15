@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { suggestBranchName } from '../gitRunner';
 import { RESET_MODES } from './types';
 
 // showQuickPick always highlights the first item; IntelliJ pre-selects Mixed, so drive
@@ -26,43 +25,4 @@ export function pickResetMode(title: string): Promise<(typeof RESET_MODES)[numbe
     });
     picker.show();
   });
-}
-export type BranchNamePrefill = Pick<vscode.InputBoxOptions, 'value' | 'valueSelection' | 'validateInput'>;
-/**
- * Seeds a New Branch prompt with a name derived from `base`, selected end to end so it can be
- * typed straight over or edited in place.
- */
-export function prefilledBranchName(base: string | undefined, branchType: 'local' | 'remote' = 'local'): BranchNamePrefill {
-  const suggestion = suggestBranchName(base, branchType);
-  return {
-    value: suggestion,
-    valueSelection: [0, suggestion.length],
-    validateInput: validateBranchName
-  };
-}
-export function validateBranchName(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'Branch name is required.';
-  }
-  if (trimmed.startsWith('/') || trimmed.endsWith('/') || trimmed.includes('..') || /[\s~^:?*[\\]/.test(trimmed)) {
-    return 'Enter a valid Git branch name.';
-  }
-  if (trimmed.endsWith('.lock') || trimmed.endsWith('.')) {
-    return 'Enter a valid Git branch name.';
-  }
-  return undefined;
-}
-export function validateRefName(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'Name is required.';
-  }
-  if (trimmed.startsWith('/') || trimmed.endsWith('/') || trimmed.includes('..') || /[\s~^:?*[\\]/.test(trimmed)) {
-    return 'Enter a valid Git ref name.';
-  }
-  if (trimmed.endsWith('.lock') || trimmed.endsWith('.')) {
-    return 'Enter a valid Git ref name.';
-  }
-  return undefined;
 }

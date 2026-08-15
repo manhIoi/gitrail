@@ -1,7 +1,8 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { showBranchDiffWithWorkingTree, showGitLogView, GitProContentProvider, registerGitLogView } from './gitLogView';
-import { GitRunner, shellQuote, suggestBranchName } from './gitRunner';
+import { prefilledBranchName, remoteBranchParts, validateBranchName } from './branchNames';
+import { GitRunner, shellQuote } from './gitRunner';
 import { registerHistoryView, showFileHistoryView, showSelectionHistoryView } from './historyView';
 import { registerInlineBlame } from './inlineBlame';
 import { mergeCommand, pickMergeOptions } from './mergeOptions';
@@ -862,43 +863,6 @@ function branchIcon(isCurrent: boolean, tracking: BranchTrackingStatus): vscode.
     return new vscode.ThemeIcon('cloud-upload', new vscode.ThemeColor('charts.blue'));
   }
   return new vscode.ThemeIcon('git-branch', new vscode.ThemeColor('charts.blue'));
-}
-
-function remoteBranchParts(branch: string): { remote: string; name: string } | undefined {
-  const [remote, ...parts] = branch.split('/');
-  if (!remote || !parts.length) {
-    return undefined;
-  }
-  return { remote, name: parts.join('/') };
-}
-
-type BranchNamePrefill = Pick<vscode.InputBoxOptions, 'value' | 'valueSelection' | 'validateInput'>;
-
-/**
- * Seeds a New Branch prompt with a name derived from `base`, selected end to end so it can be
- * typed straight over or edited in place.
- */
-function prefilledBranchName(base: string | undefined, branchType: 'local' | 'remote' = 'local'): BranchNamePrefill {
-  const suggestion = suggestBranchName(base, branchType);
-  return {
-    value: suggestion,
-    valueSelection: [0, suggestion.length],
-    validateInput: validateBranchName
-  };
-}
-
-function validateBranchName(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'Branch name is required.';
-  }
-  if (trimmed.startsWith('/') || trimmed.endsWith('/') || trimmed.includes('..') || /[\s~^:?*[\\]/.test(trimmed)) {
-    return 'Enter a valid Git branch name.';
-  }
-  if (trimmed.endsWith('.lock') || trimmed.endsWith('.')) {
-    return 'Enter a valid Git branch name.';
-  }
-  return undefined;
 }
 
 function getActiveFile(): string | undefined {

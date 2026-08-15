@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getNonce } from '../webviewUtil';
 import { extensionUri } from './extensionHome';
 import type { ViewState } from './types';
 
@@ -57,12 +58,4 @@ export function escapeHtml(value: string): string {
     '"': '&quot;',
     "'": '&#39;'
   }[char] || char));
-}
-export function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let index = 0; index < 32; index += 1) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return nonce;
 }

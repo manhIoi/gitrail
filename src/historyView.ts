@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { GitRunner, shellQuote } from './gitRunner';
+import { getNonce } from './webviewUtil';
 
 type HistoryEntry = {
   hash: string;
@@ -317,13 +318,4 @@ function esc(value: string): string {
     '"': '&quot;',
     "'": '&#39;'
   }[char] || char));
-}
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let index = 0; index < 32; index += 1) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return nonce;
 }
