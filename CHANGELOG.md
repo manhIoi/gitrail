@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Prefill the `New Branch` prompt with a name derived from the ref the branch starts at, selected end to end so it can be typed straight over or edited in place. Branching off `feature/login` opens with `feature/login` already in the box, so the prefix your convention dictates does not have to be retyped. Branching off a remote drops the remote — `origin/feature/login` becomes `feature/login`, the local name the branch would get anyway — and branching off a long-lived branch (`main`, `develop`, and so on) prefills nothing, since its name says nothing about what the new branch should be called. Applies to `New Branch` from a branch, from a commit, and from HEAD, in both the Log View and the command palette.
+- Stop `origin/` — a remote name with nothing after the slash — being read as a branch on `origin` with an empty name. It is now rejected, as it already was everywhere else.
+- Internal: the Log View's stylesheet and script moved out of `src/gitLogView.ts` into `media/logView.css` and `media/logView.js`, and the rest of that 4,367-line file was split into `src/logView/`. No behaviour changes, and the panel's CSP is unchanged.
+
 ## 0.1.2
 
 - Make the branch labels on a commit readable. A branch level with its remote was listed twice and the two labels shared the space, so a row would show `origin/... origin/... ma...` and name nothing. The pair is now one `origin & main` label, the way IntelliJ writes it, and a label will not shrink below the width of an actual branch name — the commit subject gives way instead. `origin/HEAD` no longer appears as a label of its own.
