@@ -1,0 +1,867 @@
+    :root {
+      --bg: var(--vscode-editor-background, #15161a);
+      --panel: var(--vscode-sideBar-background, var(--vscode-editor-background, #1c1e24));
+      --panel-2: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background, #232631));
+      --border: var(--vscode-panel-border, var(--vscode-editorGroup-border, #343845));
+      --text: var(--vscode-editor-foreground, #d7dce8);
+      --muted: var(--vscode-descriptionForeground, #8b92a3);
+      --accent: var(--vscode-textLink-foreground, #6ea8fe);
+      --green: #62c073;
+      --orange: #d9a441;
+      --red: #ef6b73;
+      --purple: #b18cff;
+      --toolbar-bg: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background, #181a20));
+      --search-bg: var(--vscode-input-background, #101116);
+      --hover-bg: var(--vscode-list-hoverBackground, #2f3b5e);
+      --selected-bg: var(--vscode-list-activeSelectionBackground, #04568c);
+      --selected-fg: var(--vscode-list-activeSelectionForeground, #ffffff);
+      --context-bg: var(--vscode-menu-background, var(--vscode-editor-background, #242630));
+      --context-border: var(--vscode-menu-border, var(--vscode-panel-border, #4a5060));
+      --context-hover: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #3a4771));
+      --card-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #191b20));
+      --commit-title: var(--vscode-textLink-foreground, #8db5ff);
+      --folder-fg: var(--vscode-editor-foreground, #cfd5e3);
+      --dot-stroke: var(--vscode-editor-background, #15161a);
+      --ref-color: #c7b7ff;
+      --add-color: #88d38f;
+      --del-color: #ff8b91;
+      --hunk-color: #91b4ff;
+      --branch-icon: #69b8f5;
+      --current-icon: #f4c542;
+      --tag-icon: #8dc9c3;
+      /* Sits under the row text, so it has to stay well clear of --hover-bg and --selected-bg
+         or a highlighted row reads as selected. */
+      --highlight-bg: rgba(110, 168, 254, 0.13);
+      /* Everything textual scales off this. Rows stay 24px tall, which has room to spare at
+         this size - going much past 14px would mean moving .commit-row and GRAPH_ROW_H
+         together, since the SVG overlay's row pitch has to equal the CSS row height. */
+      --font-size: 12px;
+    }
+    body.vscode-dark { color-scheme: dark; }
+    body.vscode-light {
+      color-scheme: light;
+      --green: #1e7a1e;
+      --orange: #8a6000;
+      --red: #bc2929;
+      --purple: #5c2d91;
+      --ref-color: #5c2d91;
+      --add-color: #1e7a1e;
+      --del-color: #bc2929;
+      --hunk-color: #0066bb;
+      --branch-icon: #0066bb;
+      --current-icon: #a06000;
+      --tag-icon: #1a7a80;
+      --highlight-bg: rgba(0, 102, 187, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      /* VS Code's default webview stylesheet adds "padding: 0 20px". */
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--vscode-font-family);
+      font-size: var(--font-size);
+      overflow: hidden;
+    }
+    button, input {
+      font: inherit;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: var(--sidebar-width, 280px) 6px minmax(460px, 1fr) 6px var(--detail-width, 420px);
+      height: 100vh;
+      min-width: 980px;
+    }
+    .sidebar, .commits, .detail {
+      min-height: 0;
+      background: var(--panel);
+    }
+    .pane-resizer {
+      position: relative;
+      min-width: 6px;
+      background: var(--panel);
+      cursor: col-resize;
+      user-select: none;
+      z-index: 20;
+    }
+    /* No divider at rest - the panes read as one surface. The handle still occupies its 6px,
+       so the drag target is unchanged; it only becomes visible once you are on it. */
+    .pane-resizer::before {
+      content: '';
+      position: absolute;
+      inset: 0 2px;
+      background: transparent;
+      transition: background 120ms ease;
+    }
+    .pane-resizer:hover::before,
+    .pane-resizer.dragging::before {
+      inset: 0 1px;
+      background: var(--accent);
+    }
+    body.resizing-pane {
+      cursor: col-resize;
+      user-select: none;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      height: 42px;
+      padding: 6px 8px;
+      background: var(--toolbar-bg);
+    }
+    .commit-toolbar {
+      gap: 10px;
+      overflow: visible;
+    }
+    .search {
+      width: 100%;
+      min-width: 0;
+      padding: 6px 8px;
+      color: var(--text);
+      background: var(--search-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      outline: none;
+    }
+    .commit-search-wrap {
+      display: flex;
+      align-items: center;
+      flex: 0 1 340px;
+      min-width: 220px;
+      height: 30px;
+      color: var(--text);
+      background: var(--search-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .commit-search-icon {
+      width: 30px;
+      flex: 0 0 30px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+    }
+    .commit-search-icon svg {
+      display: block;
+    }
+    .commit-search {
+      min-width: 0;
+      flex: 1 1 auto;
+      padding: 6px 4px;
+      color: var(--text);
+      background: transparent;
+      border: 0;
+      outline: none;
+    }
+    .clear-button {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 24px;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .clear-button:hover {
+      color: var(--text);
+      background: var(--panel-2);
+    }
+    .clear-button[hidden] {
+      display: none;
+    }
+    .filter-toggle {
+      width: 30px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-left: 1px solid transparent;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .filter-toggle:hover,
+    .filter-toggle.active {
+      color: var(--text);
+      background: var(--panel-2);
+    }
+    .filter-dropdown {
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .filter-dropdown-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      height: 30px;
+      padding: 0 6px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 700;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .filter-label {
+      display: inline-flex;
+      align-items: center;
+      line-height: 1;
+    }
+    .filter-dropdown-button:hover,
+    .filter-dropdown.open .filter-dropdown-button,
+    .filter-dropdown-button.active {
+      color: var(--text);
+      background: var(--panel-2);
+      border-color: var(--border);
+    }
+    .filter-chevron {
+      position: relative;
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      color: inherit;
+      font-size: 0;
+      line-height: 0;
+    }
+    .filter-chevron::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 4px;
+      height: 4px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: translate(-50%, -68%) rotate(45deg);
+      transform-origin: center;
+    }
+    .filter-clear {
+      width: 16px;
+      height: 16px;
+      display: inline-grid;
+      place-items: center;
+      margin-left: 1px;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .filter-clear:hover {
+      background: var(--panel);
+    }
+    .filter-menu {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      z-index: 40;
+      width: 260px;
+      max-height: 340px;
+      display: none;
+      padding: 6px;
+      color: var(--text);
+      background: var(--context-bg);
+      border: 1px solid var(--context-border);
+      border-radius: 6px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+      overflow: auto;
+    }
+    .filter-menu-search {
+      width: 100%;
+      margin-bottom: 6px;
+      padding: 6px 8px;
+      color: var(--text);
+      background: var(--search-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      outline: none;
+    }
+    .filter-dropdown.open .filter-menu {
+      display: block;
+    }
+    .filter-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .filter-option:hover {
+      background: var(--context-hover);
+    }
+    .filter-option input {
+      margin: 0;
+    }
+    .filter-option span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .filter-pinned .filter-option span {
+      font-weight: 600;
+    }
+    .filter-menu-divider {
+      height: 1px;
+      margin: 4px 2px 6px;
+      background: var(--context-border);
+    }
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+    .icon-button {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .icon-button:hover {
+      background: var(--panel-2);
+      border-color: var(--border);
+    }
+    .icon-button svg {
+      display: block;
+    }
+    .section-title {
+      padding: 12px 14px 6px;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: var(--font-size);
+    }
+    .branch-list, .commit-list, .file-list {
+      overflow: auto;
+      min-height: 0;
+    }
+    .branch-list { height: calc(100vh - 42px); }
+    .tree-row, .branch {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 12px;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .tree-row:hover, .branch:hover, .commit-row:hover, .file-row:hover {
+      background: var(--hover-bg);
+    }
+    .tree-row.active, .branch.active, .commit-row.active, .file-row.active,
+    .tree-row.active:hover, .branch.active:hover, .commit-row.active:hover, .file-row.active:hover {
+      background: var(--selected-bg);
+      color: var(--selected-fg);
+    }
+    .commit-row.active .subject, .commit-row.active .author, .commit-row.active .date,
+    .branch.active .tree-name, .file-row.active .tree-name {
+      color: var(--selected-fg);
+    }
+    .commit-row.active.is-merge .subject {
+      color: var(--selected-fg);
+      opacity: 0.85;
+    }
+    .tree-row.folder {
+      color: var(--folder-fg);
+      font-weight: 700;
+    }
+    .tree-row.file {
+      font-weight: 500;
+    }
+    .tree-row.hidden-by-search {
+      display: none;
+    }
+    .context-menu {
+      position: fixed;
+      z-index: 50;
+      min-width: 320px;
+      max-width: min(640px, calc(100vw - 16px));
+      padding: 4px 0;
+      color: var(--text);
+      background: var(--context-bg);
+      border: 1px solid var(--context-border);
+      border-radius: 6px;
+      /* Clip on the rounded box, not on each row: a row clipped at its own edge cuts the
+         label flush against the padding instead of ellipsising inside it. */
+      overflow: hidden;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+    }
+    .context-menu[hidden] {
+      display: none;
+    }
+    .context-menu-item {
+      width: 100%;
+      display: grid;
+      /* The shortcut track has to be allowed to shrink. Left as bare "auto" it sizes to its
+         content and pushes the row wider than the menu, so the overflow lands past the right
+         padding - which is what made the labels look like they ran off the edge. */
+      grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
+      gap: 8px;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 14px;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      text-align: left;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    /* The branch menu has no icons and no shortcuts, so it is one track wide. Its label still
+       has to be a real element: a bare text node in a grid becomes an anonymous item, lands in
+       the icon track, and overflows it instead of ellipsising. */
+    .context-menu-item.no-icon {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .context-menu-icon {
+      width: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--branch-icon);
+    }
+    .context-menu-icon svg {
+      display: block;
+    }
+    .context-menu-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .context-menu-shortcut {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted);
+    }
+    .context-menu-item:hover,
+    .context-menu-item:focus {
+      background: var(--context-hover);
+      outline: none;
+    }
+    .context-menu-item:disabled {
+      color: var(--muted);
+      cursor: default;
+      opacity: 0.62;
+    }
+    .context-menu-item:disabled:hover,
+    .context-menu-item:disabled:focus {
+      background: transparent;
+    }
+    .context-menu-separator {
+      height: 1px;
+      margin: 4px 0;
+      background: var(--border);
+    }
+    .tree-icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      color: var(--muted);
+    }
+    .tree-icon svg {
+      display: block;
+    }
+    .tree-chevron {
+      width: 14px;
+      flex: 0 0 14px;
+      position: relative;
+      display: block;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0;
+      line-height: 0;
+      align-self: stretch;
+    }
+    .tree-chevron::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: translate(-50%, -70%) rotate(45deg);
+      transform-origin: center;
+    }
+    .tree-row[data-collapsed="true"] > .tree-chevron::before {
+      transform: translate(-70%, -50%) rotate(-45deg);
+    }
+    .branch > .tree-chevron::before,
+    .file > .tree-chevron::before {
+      display: none;
+    }
+    .tree-icon.folder-icon {
+      width: 18px;
+      flex-basis: 18px;
+      color: var(--folder-fg);
+    }
+    .tree-icon.branch-icon {
+      color: var(--branch-icon);
+      font-size: 15px;
+    }
+    .tree-icon.current-icon {
+      color: var(--current-icon);
+      font-size: 15px;
+    }
+    .tree-icon.behind-icon {
+      color: var(--orange);
+      font-size: 15px;
+    }
+    .tree-icon.ahead-icon {
+      color: var(--branch-icon);
+      font-size: 15px;
+    }
+    .tree-icon.diverged-icon {
+      color: var(--purple);
+      font-size: 15px;
+    }
+    .tree-icon.tag-icon {
+      color: var(--tag-icon);
+      font-size: 15px;
+    }
+    .tree-level-0 { padding-left: 12px; }
+    .tree-level-1 { padding-left: 24px; }
+    .tree-level-2 { padding-left: 36px; }
+    .tree-level-3 { padding-left: 48px; }
+    .tree-level-4 { padding-left: 60px; }
+    .tree-level-5 { padding-left: 72px; }
+    .tree-level-6 { padding-left: 84px; }
+    .tree-level-7 { padding-left: 96px; }
+    .tree-level-8 { padding-left: 108px; }
+    .tree-level-9 { padding-left: 120px; }
+    .tree-level-10 { padding-left: 132px; }
+    .tree-name, .branch .name {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .branch-status {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      flex: 0 0 auto;
+      margin-left: auto;
+      color: var(--muted);
+      font-size: var(--font-size);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .track-behind { color: var(--orange); }
+    .track-ahead { color: var(--branch-icon); }
+    .track-diverged { color: var(--purple); }
+    .branch .meta {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: var(--font-size);
+    }
+    /* Rows are click targets, and clicking a range of them is a drag - which the browser also
+       reads as dragging across text, painting the row blue. Scoped to the rows themselves
+       rather than the panes: the toolbar holds the search input, and the commit card holds a
+       hash worth copying, both of which have to stay selectable. */
+    .tree-row, .branch, .commit-row, .file-row, .context-menu {
+      user-select: none;
+    }
+    .commit-list {
+      height: calc(100vh - 42px);
+      position: relative;
+    }
+    /* Tinting the background rather than the text: recolouring the words fights the refs and
+       the merge italics that already carry meaning in this row. Excluded from hover and
+       selection explicitly, so this does not depend on sitting before them in the file. */
+    .commit-list.highlight-current .commit-row:not([data-off-branch]):not(.active):not(:hover) {
+      background: var(--highlight-bg);
+    }
+    .commit-row {
+      display: grid;
+      grid-template-columns: var(--graph-col, 48px) minmax(100px, 1fr) 150px 120px;
+      gap: 8px;
+      height: 24px;
+      align-items: center;
+      padding: 0 10px 0 0;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .graph-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 2;
+      overflow: hidden;
+    }
+    .graph-layer svg {
+      display: block;
+    }
+    .graph-edge {
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+    }
+    .graph-dot {
+      stroke-width: 0;
+    }
+    .graph-arrow {
+      stroke-width: 0;
+    }
+    .graph-dot.merge {
+      fill: var(--bg);
+      stroke-width: 2;
+    }
+    :root {
+      --gc-0: #f9c74f;
+      --gc-1: #4fc1e9;
+      --gc-2: #f06292;
+      --gc-3: #7bd88f;
+      --gc-4: #b48ead;
+      --gc-5: #ffa657;
+      --gc-6: #64b5f6;
+      --gc-7: #26a69a;
+    }
+    body.vscode-light {
+      --gc-0: #b8860b;
+      --gc-1: #0277bd;
+      --gc-2: #c2185b;
+      --gc-3: #2e7d32;
+      --gc-4: #6a1b9a;
+      --gc-5: #e65100;
+      --gc-6: #1565c0;
+      --gc-7: #00695c;
+    }
+    .ge-0 { stroke: var(--gc-0); }
+    .ge-1 { stroke: var(--gc-1); }
+    .ge-2 { stroke: var(--gc-2); }
+    .ge-3 { stroke: var(--gc-3); }
+    .ge-4 { stroke: var(--gc-4); }
+    .ge-5 { stroke: var(--gc-5); }
+    .ge-6 { stroke: var(--gc-6); }
+    .ge-7 { stroke: var(--gc-7); }
+    .gd-0 { fill: var(--gc-0); stroke: var(--gc-0); }
+    .gd-1 { fill: var(--gc-1); stroke: var(--gc-1); }
+    .gd-2 { fill: var(--gc-2); stroke: var(--gc-2); }
+    .gd-3 { fill: var(--gc-3); stroke: var(--gc-3); }
+    .gd-4 { fill: var(--gc-4); stroke: var(--gc-4); }
+    .gd-5 { fill: var(--gc-5); stroke: var(--gc-5); }
+    .gd-6 { fill: var(--gc-6); stroke: var(--gc-6); }
+    .gd-7 { fill: var(--gc-7); stroke: var(--gc-7); }
+    .subject {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+    .subject-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .refs {
+      display: inline-flex;
+      flex: 0 1 auto;
+      gap: 4px;
+      min-width: 0;
+      overflow: hidden;
+      vertical-align: middle;
+    }
+    .ref {
+      /* A chip narrower than this is all ellipsis and no branch name. Holding this floor
+         pushes the shrinking onto .subject-text, which reads fine truncated. */
+      min-width: 90px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ref-color);
+      font-size: var(--font-size);
+      font-weight: 600;
+    }
+    .branch-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 1 auto;
+      min-width: 28px;
+      max-width: 42%;
+      margin-left: auto;
+      color: var(--muted);
+      opacity: 0.58;
+      font-size: var(--font-size);
+      font-weight: 600;
+      overflow: hidden;
+    }
+    .branch-hint svg {
+      flex: 0 0 14px;
+      opacity: 0.85;
+    }
+    .branch-hint-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .commit-row:hover .branch-hint,
+    .commit-row.active .branch-hint {
+      opacity: 0.82;
+    }
+    .ref.current-ref {
+      color: var(--current-icon);
+    }
+    .ref.behind-ref {
+      color: var(--orange);
+    }
+    .ref.ahead-ref {
+      color: var(--branch-icon);
+    }
+    .ref.diverged-ref {
+      color: var(--purple);
+    }
+    .ref-track {
+      margin-left: 3px;
+      font-size: calc(var(--font-size) - 1px);
+      font-weight: 700;
+    }
+    .author, .date {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .commit-row.is-merge .subject {
+      color: var(--muted);
+      font-weight: 400;
+      font-style: italic;
+    }
+    .detail {
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .commit-card {
+      padding: 14px 16px;
+      background: var(--card-bg);
+    }
+    .commit-title {
+      margin-bottom: 10px;
+      color: var(--commit-title);
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 5px 10px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .kv span:nth-child(even) {
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      min-height: 30px;
+      cursor: pointer;
+    }
+    .diff-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 8px 12px;
+      background: var(--card-bg);
+    }
+    .diff-title {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .diff-count {
+      color: var(--muted);
+      font-weight: 500;
+      margin-left: 6px;
+    }
+    .mini-button {
+      flex: 0 0 auto;
+      height: 24px;
+      padding: 0 8px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      line-height: 22px;
+    }
+    .mini-button:hover {
+      background: var(--panel-2);
+    }
+    .file-row .mini-button {
+      margin-left: auto;
+      opacity: 0;
+    }
+    .file-row:hover .mini-button,
+    .file-row.active .mini-button {
+      opacity: 1;
+    }
+    .status {
+      width: 38px;
+      flex: 0 0 38px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .status.A { color: var(--green); }
+    .status.D { color: var(--red); }
+    .status.M { color: var(--orange); }
+    .status.R { color: var(--purple); }
+    .path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty, .error {
+      padding: 18px;
+      color: var(--muted);
+    }
+    .error {
+      color: var(--red);
+    }
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: var(--sidebar-width, 220px) 6px minmax(320px, 1fr) 6px var(--detail-width, 340px);
+      }
+      .commit-row { grid-template-columns: var(--graph-col, 48px) minmax(100px, 1fr) 130px 100px; }
+    }
