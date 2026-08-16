@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Turn on `Highlight commits on '<branch>'` by default, and make it a setting — `giPro.logView.highlightCurrentBranch`. It had to become a setting to mean anything: the View menu's state was kept in the panel's own storage, which is rewritten on every scroll, so a stored value always won and there was no default left to change. The menu now writes the setting instead of a copy of it, which also means the choice follows you to another window and another machine.
+- Add `Highlight my commits`, on by default, as `giPro.logView.highlightMyCommits`. Commits you authored show their name in teal and bold, leaving the row background to the branch highlight so both can be read at once. Matched on `git config user.name`, the same way the User filter's `Me` entry already does, so the two can never disagree. The option is greyed out when no user name is set.
+- Fix the branch highlight vanishing from a row the moment you point at it. The rule excluded hovered rows outright, so hovering a commit on the current branch made it look exactly like one from elsewhere — at the moment you were looking hardest. The tint now rides on `background-image` while hover and selection keep `background-color`, so a hovered highlighted row shows both instead of one replacing the other.
+
 ## 0.1.7
 
 - Colour the ahead/behind count blue rather than leaving it in the row's text colour, which made it plain white in the dark theme. IntelliJ gives the number its own blue so it reads as a count you can click toward rather than as part of the branch name, and Gitrail now matches: `#6089ef` in the dark theme, and `#4069e0` in the light one — IntelliJ's own `#4573e8` two steps darker, since at 12px bold its 4.31:1 sits just under the ratio text wants on white.

@@ -36,6 +36,9 @@
       /* The count is a number to read, not a state to decode, so it gets its own blue
          rather than the row's text colour - which is what IntelliJ does. */
       --track-count: #6089ef;
+      /* Teal: every other hue in a commit row is taken - refs are purple, the branch and
+         the count are blues, behind is coral - and a fourth meaning needs its own. */
+      --mine-fg: #5ec8bd;
       /* Separate from --current-icon, which also colours the current branch's ref label on
          a commit row. That label is 12px text and needs a text contrast ratio; the star is
          a filled glyph read by its shape, so it can be brighter than text ever could. */
@@ -67,6 +70,7 @@
       /* IntelliJ's own #4573e8 lands at 4.31:1 on white, just under the ratio 12px bold
          text wants; this is the same blue two steps darker. */
       --track-count: #4069e0;
+      --mine-fg: #0f766e;
       --star-icon: #f5c344;
       --tag-icon: #1a7a80;
       --highlight-bg: rgba(0, 102, 187, 0.10);
@@ -606,10 +610,18 @@
       position: relative;
     }
     /* Tinting the background rather than the text: recolouring the words fights the refs and
-       the merge italics that already carry meaning in this row. Excluded from hover and
-       selection explicitly, so this does not depend on sitting before them in the file. */
-    .commit-list.highlight-current .commit-row:not([data-off-branch]):not(.active):not(:hover) {
-      background: var(--highlight-bg);
+       the merge italics that already carry meaning in this row. The tint rides on
+       background-image while hover and selection own background-color, so hovering a
+       highlighted row shows both rather than replacing one with the other - and the rule no
+       longer depends on where it sits relative to them in the file. */
+    .commit-list.highlight-current .commit-row:not([data-off-branch]):not(.active) {
+      background-image: linear-gradient(var(--highlight-bg), var(--highlight-bg));
+    }
+    /* Author name rather than another background wash: the row background is already spoken
+       for by the branch highlight, and the two have to be legible at the same time. */
+    .commit-list.highlight-mine .commit-row[data-mine] .author {
+      color: var(--mine-fg);
+      font-weight: 700;
     }
     .commit-row {
       display: grid;

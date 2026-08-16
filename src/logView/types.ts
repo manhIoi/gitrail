@@ -57,6 +57,16 @@ export type DiffTarget = {
   label: string;
   against?: string;
 };
+/**
+ * Display options the panel starts with. These live in VS Code settings rather than in the
+ * webview's own state: the webview persists its state on every scroll, so a value stored
+ * there would always win and "default" would never mean anything.
+ */
+export type ViewOptions = {
+  highlightCurrentBranch: boolean;
+  highlightMyCommits: boolean;
+};
+
 export type ViewState = {
   root: string;
   selectedBranch?: string;
@@ -65,6 +75,7 @@ export type ViewState = {
   commits: Commit[];
   hasMoreCommits: boolean;
   currentUser?: string;
+  viewOptions: ViewOptions;
   detail?: CommitDetail;
   branchDiff?: BranchDiff;
   error?: string;
@@ -83,6 +94,8 @@ export type WebviewMessage = {
   users?: string[];
   branches?: string[];
   noMerges?: boolean;
+  key?: string;
+  value?: boolean;
   focused?: boolean;
   open?: boolean;
 };

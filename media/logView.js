@@ -12,8 +12,12 @@
 	    };
 	    // Highlighting is decided in the browser from data already on each row; No merge
 	    // commits is a git argument and has to go back to the extension.
+	    // The two highlights read from settings, never from persisted state: this state is
+	    // rewritten on every scroll, so a copy kept here would always win and the setting
+	    // could never act as a default. noMerges has no setting and stays session state.
 	    const viewOptions = {
-	      highlightCurrentBranch: Boolean(persistedViewState.viewOptions?.highlightCurrentBranch),
+	      highlightCurrentBranch: Boolean(state.viewOptions?.highlightCurrentBranch),
+	      highlightMyCommits: Boolean(state.viewOptions?.highlightMyCommits),
 	      noMerges: Boolean(persistedViewState.viewOptions?.noMerges)
 	    };
 	    const paneSizes = {
@@ -77,7 +81,7 @@
 	          branches: Array.from(commitFilters.branches),
 	          users: Array.from(commitFilters.users)
 	        },
-	        viewOptions,
+	        viewOptions: { noMerges: viewOptions.noMerges },
 	        paneSizes,
 	        scrollTops,
 	        selectedCommits: Array.from(selectedCommitHashes),
@@ -263,6 +267,15 @@
 	          // dim at once - which reads as a broken panel rather than a highlight.
 	          disabled: !currentBranch,
 	          title: currentBranch ? 'Dim commits that are not on ' + currentBranch : 'HEAD is detached, so there is no current branch'
+	        },
+	        {
+	          key: 'highlightMyCommits',
+	          label: 'Highlight my commits',
+	          // Without a git user.name there is nobody to match against.
+	          disabled: !state.currentUser,
+	          title: state.currentUser
+	            ? 'Pick out commits authored by ' + state.currentUser
+	            : 'Set git config user.name to use this'
 	        },
 	        { key: 'noMerges', label: 'No merge commits', disabled: false, title: 'Hide commits with more than one parent' }
 	      ];
@@ -657,7 +670,10 @@
 	        const active = selectedCommitHashes.has(commit.hash);
 	        const isMerge = commit.parents.length > 1;
 	        const offBranch = currentBranch && !(commit.branches || []).includes(currentBranch);
-	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '"' + (offBranch ? ' data-off-branch="1"' : '') + ' title="' + html(commitTooltip(commit)) + '">' +
+	        // Matched on the author name, the same way the User filter's "Me" entry does, so
+	        // the two can never disagree about which commits are yours.
+	        const mine = state.currentUser && commit.author === state.currentUser;
+	        rows += '<div class="commit-row' + (isMerge ? ' is-merge' : '') + (active ? ' active' : '') + '" data-hash="' + html(commit.hash) + '"' + (offBranch ? ' data-off-branch="1"' : '') + (mine ? ' data-mine="1"' : '') + ' title="' + html(commitTooltip(commit)) + '">' +
           '<div class="graph-cell"></div>' +
           '<div class="subject"><span class="subject-text">' + html(commit.subject) + '</span>' + refLabels(commit.refs) + commitBranchHint(commit) + '</div>' +
           '<div class="author">' + html(commit.author) + '</div>' +
@@ -803,7 +819,7 @@
       app.style.setProperty('--sidebar-width', paneSizes.sidebar + 'px');
       app.style.setProperty('--detail-width', paneSizes.detail + 'px');
       document.getElementById('commits').style.setProperty('--graph-col', commitsView.graphWidth + 'px');
-      applyHighlightCurrentBranch();
+      applyHighlights();
       wire();
       restoreScrollPositions();
     }
@@ -1132,15 +1148,17 @@
 	          const key = node.dataset.viewOption;
 	          viewOptions[key] = node.checked;
 	          persistViewState();
-	          // Highlighting needs no git, so it lands immediately. Hiding merges changes what
-	          // the log is asked for, so it goes back to the extension like any other filter.
+	          // Highlighting needs no git, so it lands immediately; the setting is written
+	          // alongside so the choice is what the panel opens with next time. Hiding merges
+	          // changes what the log is asked for, so it goes back like any other filter.
 	          if (key === 'noMerges') {
 	            sendCommitFilters();
 	          } else {
-	            applyHighlightCurrentBranch();
+	            applyHighlights();
+	            send({ type: 'setViewOption', key, value: node.checked });
 	          }
 	          const button = node.closest('[data-filter-dropdown]')?.querySelector('.filter-dropdown-button');
-	          if (button) button.classList.toggle('active', viewOptions.highlightCurrentBranch || viewOptions.noMerges);
+	          if (button) button.classList.toggle('active', viewOptionsActive());
 	        });
 	      });
 
@@ -1164,9 +1182,17 @@
 	      });
 	    }
 
-	    function applyHighlightCurrentBranch() {
+	    function applyHighlights() {
 	      const list = document.getElementById('commits');
-	      if (list) list.classList.toggle('highlight-current', Boolean(currentBranch) && viewOptions.highlightCurrentBranch);
+	      if (!list) return;
+	      list.classList.toggle('highlight-current', Boolean(currentBranch) && viewOptions.highlightCurrentBranch);
+	      list.classList.toggle('highlight-mine', Boolean(state.currentUser) && viewOptions.highlightMyCommits);
+	    }
+
+	    function viewOptionsActive() {
+	      return (Boolean(currentBranch) && viewOptions.highlightCurrentBranch)
+	        || (Boolean(state.currentUser) && viewOptions.highlightMyCommits)
+	        || viewOptions.noMerges;
 	    }
 
 	    function closeFilterDropdowns() {

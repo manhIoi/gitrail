@@ -14,7 +14,7 @@ import {
 } from './parse';
 import { pickResetMode } from './prompts';
 import type {
-  Branch, BranchDiff, ChangedFile, Commit, CommitDetail, ViewState, WebviewMessage
+  Branch, BranchDiff, ChangedFile, Commit, CommitDetail, ViewOptions, ViewState, WebviewMessage
 } from './types';
 
 export class GitLogController {
@@ -112,6 +112,14 @@ export class GitLogController {
         } finally {
           this.loadingMoreCommits = false;
         }
+        return;
+      }
+
+      if (message.type === 'setViewOption' && isViewOptionKey(message.key)) {
+        // The View menu writes the setting rather than a copy of it, so there is one source
+        // of truth and toggling here is what the panel opens with next time.
+        await vscode.workspace.getConfiguration('giPro.logView')
+          .update(message.key, Boolean(message.value), vscode.ConfigurationTarget.Global);
         return;
       }
 
@@ -814,6 +822,7 @@ export class GitLogController {
         commits,
         hasMoreCommits,
         currentUser,
+        viewOptions: readViewOptions(),
         detail,
         branchDiff
       };
@@ -826,6 +835,7 @@ export class GitLogController {
         commits: [],
         hasMoreCommits: false,
         currentUser,
+        viewOptions: readViewOptions(),
         error: error instanceof Error ? error.message : String(error)
       };
     }
@@ -1166,4 +1176,16 @@ export class GitLogController {
       files
     };
   }
+}
+
+function readViewOptions(): ViewOptions {
+  const config = vscode.workspace.getConfiguration('giPro.logView');
+  return {
+    highlightCurrentBranch: config.get<boolean>('highlightCurrentBranch', true),
+    highlightMyCommits: config.get<boolean>('highlightMyCommits', true)
+  };
+}
+
+function isViewOptionKey(key: string | undefined): key is keyof ViewOptions {
+  return key === 'highlightCurrentBranch' || key === 'highlightMyCommits';
 }

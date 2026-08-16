@@ -2,7 +2,7 @@
   "name": "gitrail",
   "displayName": "Gitrail — Visual Git Log",
   "description": "Successor to GI Pro. Git workflows for VS Code with a visual log, file history, selection history, inline blame, and quick Git actions.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "manhloi",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -313,7 +313,17 @@
           "default": false,
           "description": "Ask whether to push after a smart commit."
         },
-        "giPro.inlineBlame.enabled": {
+        "giPro.logView.highlightCurrentBranch": {
+      "type": "boolean",
+      "default": true,
+      "description": "Tint commits that the current branch contains, so commits from elsewhere stand apart. The Log View's View menu toggles this."
+    },
+    "giPro.logView.highlightMyCommits": {
+      "type": "boolean",
+      "default": true,
+      "description": "Pick out commits you authored, matching on your git user.name. The Log View's View menu toggles this."
+    },
+    "giPro.inlineBlame.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Show inline Git blame on the active cursor line."
