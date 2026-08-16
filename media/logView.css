@@ -33,6 +33,9 @@
          the dark value and body.vscode-light below could never override it. */
       --behind-arrow: #ef8f6f;
       --ahead-arrow: #69b8f5;
+      /* The count is a number to read, not a state to decode, so it gets its own blue
+         rather than the row's text colour - which is what IntelliJ does. */
+      --track-count: #6089ef;
       /* Separate from --current-icon, which also colours the current branch's ref label on
          a commit row. That label is 12px text and needs a text contrast ratio; the star is
          a filled glyph read by its shape, so it can be brighter than text ever could. */
@@ -61,6 +64,9 @@
       --current-icon: #b45309;
       --behind-arrow: #d9553a;
       --ahead-arrow: #0072d1;
+      /* IntelliJ's own #4573e8 lands at 4.31:1 on white, just under the ratio 12px bold
+         text wants; this is the same blue two steps darker. */
+      --track-count: #4069e0;
       --star-icon: #f5c344;
       --tag-icon: #1a7a80;
       --highlight-bg: rgba(0, 102, 187, 0.10);
@@ -579,9 +585,7 @@
       align-items: center;
       gap: 3px;
     }
-    /* The arrow marks the direction; the count stays in the row's own text colour so a
-       number never has to be read at an icon's contrast. */
-    .track-count { color: var(--text); }
+    .track-count { color: var(--track-count); }
     .track-behind .track-arrow { color: var(--behind-arrow); }
     .track-ahead .track-arrow { color: var(--ahead-arrow); }
     .track-diverged .track-arrow { color: var(--purple); }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Colour the ahead/behind count blue rather than leaving it in the row's text colour, which made it plain white in the dark theme. IntelliJ gives the number its own blue so it reads as a count you can click toward rather than as part of the branch name, and Gitrail now matches: `#6089ef` in the dark theme, and `#4069e0` in the light one — IntelliJ's own `#4573e8` two steps darker, since at 12px bold its 4.31:1 sits just under the ratio text wants on white.
+
 ## 0.1.6
 
 - Stop a branch that is behind turning its whole row one colour. The branch glyph, the arrow and the count were all painted with the same orange, so a row that was merely out of date read as a warning and the glyph stopped saying "branch" at all. The glyph now keeps its blue in every tracking state, the way IntelliJ's branch popup does, and only the small direction arrow carries the state — `↓` in coral when behind, `↑` in blue when ahead. The count beside it is a number, so it now sits in the row's ordinary text colour and is read rather than decoded.
