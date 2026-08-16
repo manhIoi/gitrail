@@ -36,9 +36,7 @@
       /* The count is a number to read, not a state to decode, so it gets its own blue
          rather than the row's text colour - which is what IntelliJ does. */
       --track-count: #6089ef;
-      /* Teal: every other hue in a commit row is taken - refs are purple, the branch and
-         the count are blues, behind is coral - and a fourth meaning needs its own. */
-      --mine-fg: #5ec8bd;
+      --mine-fg: #74bdea;
       /* Separate from --current-icon, which also colours the current branch's ref label on
          a commit row. That label is 12px text and needs a text contrast ratio; the star is
          a filled glyph read by its shape, so it can be brighter than text ever could. */
@@ -70,7 +68,7 @@
       /* IntelliJ's own #4573e8 lands at 4.31:1 on white, just under the ratio 12px bold
          text wants; this is the same blue two steps darker. */
       --track-count: #4069e0;
-      --mine-fg: #0f766e;
+      --mine-fg: #0b5a8a;
       --star-icon: #f5c344;
       --tag-icon: #1a7a80;
       --highlight-bg: rgba(0, 102, 187, 0.10);
@@ -618,7 +616,9 @@
       background-image: linear-gradient(var(--highlight-bg), var(--highlight-bg));
     }
     /* Author name rather than another background wash: the row background is already spoken
-       for by the branch highlight, and the two have to be legible at the same time. */
+       for by the branch highlight, and the two have to be legible at the same time. Deep
+       blue rather than a livelier hue - teal read as glaring next to the graph, whose gc-7
+       lane is the same hue two columns over. */
     .commit-list.highlight-mine .commit-row[data-mine] .author {
       color: var(--mine-fg);
       font-weight: 700;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Recolour the author name on your own commits from teal to a deep sea blue — `#0b5a8a` in the light theme, `#74bdea` in the dark one. The teal was the same hue as the graph's `gc-7` lane, drawn two columns away in the same row, which is what made it read as glaring rather than as a mark. The blue also carries more contrast: 7.38:1 and 8.01:1, and 6.40:1 and 7.00:1 on a highlighted row, against teal's 5.47:1 and 4.74:1.
+
 ## 0.1.8
 
 - Turn on `Highlight commits on '<branch>'` by default, and make it a setting — `giPro.logView.highlightCurrentBranch`. It had to become a setting to mean anything: the View menu's state was kept in the panel's own storage, which is rewritten on every scroll, so a stored value always won and there was no default left to change. The menu now writes the setting instead of a copy of it, which also means the choice follows you to another window and another machine.
