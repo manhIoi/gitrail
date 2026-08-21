@@ -19,14 +19,16 @@ Gitrail brings fast Git workflows into VS Code: a visual log view, file history,
 - History for Selection to trace commits that touched selected lines.
 - Inline blame on the active cursor line.
 - Smart Commit with staged and unstaged change handling.
-- Quick Git actions for fetch, pull with rebase, push, force push with lease, stash, branch checkout, interactive rebase, and cherry-pick.
+- Quick Git actions for fetch, pull with rebase, push, force push with lease, stash, branch checkout, new branch, merge, interactive rebase, and cherry-pick.
 - Branch diff view in the Source Control sidebar.
 
 ## Preview
 
 ### Visual Git Log
 
-Browse branches, search commits, inspect the graph, and review changed files from one panel.
+Browse branches, search commits, inspect the graph, and review changed files from one panel. Branches
+carry their tracking state, commits on the current branch are tinted, and your own commits are named in
+blue.
 
 ![Gitrail visual Git Log view](media/readme/log-view.png)
 
@@ -38,7 +40,7 @@ Compare a branch with your working tree and get individual files or all changes 
 
 ### History for Selection
 
-Select lines in a tracked file and see the commits that touched that exact range.
+Select lines in a tracked file and see the commits that touched that exact range, newest first.
 
 ![Gitrail history for selected lines](media/readme/selection-history.png)
 
@@ -107,9 +109,13 @@ Available actions include:
 - `Gitrail: Pull with Rebase`
 - `Gitrail: Push`
 - `Gitrail: Force Push with Lease`
+- `Gitrail: Amend Commit Without Editing Message`
 - `Gitrail: Stash Changes`
 - `Gitrail: Pop Stash`
 - `Gitrail: Checkout Branch`
+- `Gitrail: New Branch...`
+- `Gitrail: Branches`
+- `Gitrail: Merge with Options...`
 - `Gitrail: Interactive Rebase`
 - `Gitrail: Cherry-pick Commit`
 - `Gitrail: Abort`
@@ -120,6 +126,8 @@ Gitrail contributes these settings:
 
 - `giPro.terminalName`: terminal name used to run Git commands. Default: `Gitrail`.
 - `giPro.smartCommitPushAfterCommit`: ask whether to push after a smart commit. Default: `false`.
+- `giPro.logView.highlightCurrentBranch`: tint the background of commits the current branch contains. Default: `true`.
+- `giPro.logView.highlightMyCommits`: name your own commits in blue and bold, matched on `git config user.name`. Default: `true`.
 - `giPro.inlineBlame.enabled`: show inline Git blame on the active cursor line. Default: `true`.
 - `giPro.inlineBlame.delayMs`: delay before refreshing inline blame after cursor movement. Default: `50`.
 
