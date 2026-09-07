@@ -197,7 +197,9 @@
 
   const CHART_HEIGHT = 150;
   const MARGIN = { top: 8, right: 44, bottom: 22, left: 8 };
-  const MIN_MONTH_LABEL_GAP = 48;
+  // "Oct '25" is seven characters; at 11px in VS Code's monospace font that is ~50px, so
+  // anything under this and neighbouring labels run into each other.
+  const MIN_MONTH_LABEL_GAP = 72;
 
   // Round up to 1, 2 or 5 times a power of ten so the axis reads in round numbers.
   function niceCeil(value) {
