@@ -56,10 +56,12 @@
     "onCommand:giPro.showFileHistory",
     "onCommand:giPro.showHistoryForSelection",
     "onCommand:giPro.openGitLogView",
+    "onCommand:giPro.openContributorsView",
     "onCommand:giPro.cherryPick",
     "onCommand:giPro.mergeWithOptions",
     "onView:giPro.logView",
     "onView:giPro.historyView",
+    "onView:giPro.contributorsView",
     "onView:giPro.branchDiffView"
   ],
   "main": "./dist/extension.js",
@@ -151,6 +153,11 @@
         "category": "Gitrail"
       },
       {
+        "command": "giPro.openContributorsView",
+        "title": "Open Contributors",
+        "category": "Gitrail"
+      },
+      {
         "command": "giPro.cherryPick",
         "title": "Cherry-pick Commit",
         "category": "Gitrail"
@@ -201,6 +208,11 @@
           "id": "giProHistoryPanel",
           "title": "History",
           "icon": "media/git-log.svg"
+        },
+        {
+          "id": "giProContributorsPanel",
+          "title": "Contributors",
+          "icon": "media/git-log.svg"
         }
       ]
     },
@@ -218,6 +230,13 @@
           "name": "History",
           "type": "webview",
           "when": "giPro.historyAvailable"
+        }
+      ],
+      "giProContributorsPanel": [
+        {
+          "id": "giPro.contributorsView",
+          "name": "Contributors",
+          "type": "webview"
         }
       ],
       "scm": [

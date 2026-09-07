@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { showBranchDiffWithWorkingTree, showGitLogView, GitProContentProvider, registerGitLogView } from './gitLogView';
 import { prefilledBranchName, remoteBranchParts, validateBranchName } from './branchNames';
+import { registerContributorsView, showContributorsView } from './contributors/provider';
 import { GitRunner, shellQuote } from './gitRunner';
 import { registerHistoryView, showFileHistoryView, showSelectionHistoryView } from './historyView';
 import { registerInlineBlame } from './inlineBlame';
@@ -55,6 +56,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(gitOutputChannel);
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('gitpro', new GitProContentProvider(git)));
   registerGitLogView(context, git);
+  registerContributorsView(context, git);
   registerHistoryView(context);
   registerInlineBlame(context);
   registerAbortContextRefresh(context, git);
@@ -78,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
     { id: 'giPro.showFileHistory', handler: () => showFileHistory(git) },
     { id: 'giPro.showHistoryForSelection', handler: () => showHistoryForSelection(git) },
     { id: 'giPro.openGitLogView', handler: () => showGitLogView(context, git) },
+    { id: 'giPro.openContributorsView', handler: () => showContributorsView() },
     { id: 'giPro.cherryPick', handler: () => cherryPick(git) },
     { id: 'giPro.mergeWithOptions', handler: () => mergeWithOptions(git) }
   ];
