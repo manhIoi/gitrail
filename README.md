@@ -15,6 +15,7 @@ Gitrail brings fast Git workflows into VS Code: a visual log view, file history,
 ## Features
 
 - Visual Git Log view with branch tree, commit graph, commit search, changed-file tree, and patch preview.
+- Contributors panel: one card per author with commit, added-line and deleted-line totals and a weekly bar chart, filtered by range and ranked by commits, additions or deletions.
 - File History from the editor context menu.
 - History for Selection to trace commits that touched selected lines.
 - Inline blame on the active cursor line.
@@ -77,6 +78,19 @@ In the Log view:
 - Click a commit to load metadata, changed files, and patch content.
 - Double-click a branch to check it out.
 - Right-click a commit for actions such as copy hash, cherry-pick, create branch, create tag, revert, and reset.
+
+### See Who Contributes
+
+Run `Gitrail: Open Contributors` from the Command Palette.
+
+The panel counts every non-merge commit reachable from `HEAD`, grouped by author email (honouring `.mailmap`).
+
+- Use **Range** to narrow to the last 1, 3, 6 or 12 months; **All time** is the default.
+- Use **Metric** to rank and chart by commits, added lines or deleted lines.
+- Every chart shares one y-axis, so bars compare across people.
+- Hover a bar for the week and its value.
+
+The numbers are computed once per `HEAD` and refresh when `HEAD` moves; **Refresh** recomputes on demand.
 
 ### View File History
 
