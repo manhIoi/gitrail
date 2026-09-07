@@ -13,7 +13,7 @@ and deletions.
 
 | Question | Decision |
 |----------|----------|
-| Where it lives | A separate webview view (`giPro.contributorsView`) in the existing `giProPanel` container, beside Log. Same provider/webview mechanics as the Log View. |
+| Where it lives | A separate webview view (`giPro.contributorsView`) in its own panel container `giProContributorsPanel`, so it appears as a **Contributors** tab beside the **Gitrail** (Log) and **History** tabs. Two views inside one panel container render side by side and would squash the Log View, whose layout needs 980px; `giProHistoryPanel` set the precedent. Same provider/webview mechanics as the Log View. |
 | Data scope | The full history of `HEAD`, with a client-side time range filter (1 month, 3 months, 6 months, 1 year, All time). Weekly buckets. No branch picker. |
 | Avatars | An initials circle coloured by a hash of the author's email. No network calls, no email leaves the machine. |
 | Interactions | Metric switch (Commits / Additions / Deletions) and a per-bar hover tooltip. Clicking a contributor does nothing in this version. |
@@ -42,8 +42,9 @@ New directory `src/contributors/`, mirroring `src/logView/`:
 
 Changes to existing files:
 
-- `package.json`: view `giPro.contributorsView` (name "Contributors", type
-  `webview`) under `views.giProPanel`; command `giPro.openContributorsView`
+- `package.json`: panel container `giProContributorsPanel` (title "Contributors")
+  holding view `giPro.contributorsView` (name "Contributors", type `webview`);
+  command `giPro.openContributorsView`
   ("Open Contributors", category Gitrail); activation events
   `onView:giPro.contributorsView` and `onCommand:giPro.openContributorsView`.
 - `src/extension.ts`: call `registerContributorsView` and register the command.
