@@ -1,5 +1,6 @@
 import * as cp from 'node:child_process';
 import * as vscode from 'vscode';
+import { spawnGit } from './gitSpawn';
 
 export class GitRunner {
   private terminal: vscode.Terminal | undefined;
@@ -39,6 +40,16 @@ export class GitRunner {
         resolve(stdout.trim());
       });
     });
+  }
+
+  // Like exec(), but without a shell and without a stdout cap. For commands whose output
+  // grows with the repository, such as `git log --numstat` over the whole history.
+  async stream(args: string[], timeoutMs?: number): Promise<string> {
+    const root = await this.getWorkspaceRoot();
+    if (!root) {
+      throw new Error('No workspace folder is open.');
+    }
+    return spawnGit(args, { cwd: root.fsPath, timeoutMs });
   }
 
   async getWorkspaceRoot(): Promise<vscode.Uri | undefined> {
