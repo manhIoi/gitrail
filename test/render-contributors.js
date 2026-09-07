@@ -68,7 +68,15 @@ function renderTheme(theme, pageState, tag) {
     setTimeout(() => {
       const avatar = document.querySelector('.avatar');
       const bar = document.querySelector('rect.bar');
+      let tooltip = null;
+      if (bar) {
+        const box = bar.getBoundingClientRect();
+        bar.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: box.left + 1, clientY: box.top + 1 }));
+        const node = document.getElementById('tooltip');
+        tooltip = node && !node.hidden ? node.textContent : null;
+      }
       document.title = JSON.stringify({
+        tooltip,
         errors: window.__errors,
         cards: document.querySelectorAll('.contributor-card').length,
         bars: document.querySelectorAll('rect.bar').length,
@@ -104,6 +112,14 @@ for (const theme of ['vscode-dark', 'vscode-light']) {
   assert.notEqual(result.avatarBg, 'rgba(0, 0, 0, 0)', `${theme}: avatar has a palette colour`);
   assert.equal(result.loading, false);
   assert.equal(result.error, null);
+  // Ann has 13 non-zero weeks, Bao 8, claude 1.
+  assert.equal(result.bars, 22, `${theme}: one rect per non-zero week`);
+  assert.equal(
+    result.barFill,
+    theme === 'vscode-dark' ? 'rgb(76, 141, 255)' : 'rgb(9, 105, 218)',
+    `${theme}: bar colour follows the theme`
+  );
+  assert.match(result.tooltip || '', /^Week of .+ · \d[\d,]* commits?$/, `${theme}: hovering a bar shows the week and value`);
 
   const loading = renderTheme(theme, { ...state, contributors: [], firstWeek: undefined, loading: true }, 'loading');
   assert.equal(loading.loading, true, `${theme}: progress bar while loading`);

@@ -195,8 +195,139 @@
     drawCharts();
   }
 
-  // Charts are drawn in Task 4; until then the hosts stay empty.
-  function drawCharts() {}
+  const CHART_HEIGHT = 150;
+  const MARGIN = { top: 8, right: 44, bottom: 22, left: 8 };
+  const MIN_MONTH_LABEL_GAP = 48;
+
+  // Round up to 1, 2 or 5 times a power of ten so the axis reads in round numbers.
+  function niceCeil(value) {
+    if (value <= 0) {
+      return 1;
+    }
+    const power = Math.pow(10, Math.floor(Math.log10(value)));
+    for (const step of [1, 2, 5, 10]) {
+      if (step * power >= value) {
+        return step * power;
+      }
+    }
+    return 10 * power;
+  }
+
+  function formatWeek(week) {
+    return new Date(week * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  }
+  function monthLabel(week) {
+    const date = new Date(week * 1000);
+    return date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) + " '" + String(date.getUTCFullYear()).slice(-2);
+  }
+
+  // Charts are sized from their host's width, so they are drawn after the cards are in the
+  // DOM and again on resize. The y-axis top is shared by every card.
+  function drawCharts() {
+    const index = metric().index;
+    const top = niceCeil(current.max);
+    document.querySelectorAll('.contributor-card').forEach((card) => {
+      const entry = current.entries[Number(card.dataset.index)];
+      const host = card.querySelector('.chart-host');
+      host.innerHTML = renderChart(entry, current.weeks, top, index, host.clientWidth || 320);
+    });
+  }
+
+  function renderChart(entry, weeks, top, index, width) {
+    const height = CHART_HEIGHT;
+    const plotWidth = Math.max(10, width - MARGIN.left - MARGIN.right);
+    const plotHeight = height - MARGIN.top - MARGIN.bottom;
+    const slot = plotWidth / weeks.length;
+    const barWidth = Math.max(1, slot - Math.min(3, slot * 0.2));
+    const y = (value) => MARGIN.top + plotHeight - (value / top) * plotHeight;
+    const ticks = top % 2 === 0 ? [0, top / 2, top] : [0, top];
+    const round = (n) => Math.round(n * 10) / 10;
+
+    let svg = '<svg class="chart" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" ' +
+      'role="img" aria-label="Weekly ' + html(metric().label.toLowerCase()) + '">';
+    for (const tick of ticks) {
+      svg += '<line class="grid-line" x1="' + MARGIN.left + '" x2="' + round(MARGIN.left + plotWidth) + '" y1="' + round(y(tick)) + '" y2="' + round(y(tick)) + '"/>';
+      svg += '<text class="tick" x="' + round(MARGIN.left + plotWidth + 6) + '" y="' + round(y(tick) + 4) + '">' + tick.toLocaleString() + '</text>';
+    }
+
+    let lastLabelX = -Infinity;
+    let lastMonth = -1;
+    weeks.forEach((week, i) => {
+      const x = MARGIN.left + i * slot;
+      const row = entry.byWeek.get(week);
+      const value = row ? row[index] : 0;
+      if (value > 0) {
+        svg += '<rect class="bar" x="' + round(x + (slot - barWidth) / 2) + '" y="' + round(y(value)) + '" ' +
+          'width="' + round(barWidth) + '" height="' + round(y(0) - y(value)) + '" data-week="' + week + '" data-value="' + value + '"/>';
+      }
+      // A label where the month changes, thinned so labels never overlap when weeks are dense.
+      const month = new Date(week * 1000).getUTCMonth();
+      if (month !== lastMonth) {
+        if (i > 0 && x - lastLabelX >= MIN_MONTH_LABEL_GAP) {
+          svg += '<text class="month" x="' + round(x) + '" y="' + (height - 6) + '" text-anchor="middle">' + html(monthLabel(week)) + '</text>';
+          lastLabelX = x;
+        }
+        lastMonth = month;
+      }
+    });
+    svg += '<line class="axis" x1="' + MARGIN.left + '" x2="' + round(MARGIN.left + plotWidth) + '" y1="' + round(y(0)) + '" y2="' + round(y(0)) + '"/>';
+    return svg + '</svg>';
+  }
+
+  // One tooltip element, driven by delegation so re-rendering the cards never loses it.
+  function barAt(target) {
+    return target instanceof Element ? target.closest('rect.bar') : null;
+  }
+  function positionTooltip(tooltip, event) {
+    const pad = 12;
+    const box = tooltip.getBoundingClientRect();
+    let left = event.clientX + pad;
+    let top = event.clientY + pad;
+    if (left + box.width > window.innerWidth - 4) {
+      left = event.clientX - box.width - pad;
+    }
+    if (top + box.height > window.innerHeight - 4) {
+      top = event.clientY - box.height - pad;
+    }
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  }
+  document.addEventListener('mouseover', (event) => {
+    const bar = barAt(event.target);
+    if (!bar) {
+      return;
+    }
+    const tooltip = document.getElementById('tooltip');
+    const value = Number(bar.dataset.value);
+    tooltip.textContent = 'Week of ' + formatWeek(Number(bar.dataset.week)) + ' · ' + value.toLocaleString() + ' ' + noun(value);
+    tooltip.hidden = false;
+    positionTooltip(tooltip, event);
+  });
+  document.addEventListener('mousemove', (event) => {
+    const tooltip = document.getElementById('tooltip');
+    if (!tooltip || tooltip.hidden) {
+      return;
+    }
+    if (!barAt(event.target)) {
+      tooltip.hidden = true;
+      return;
+    }
+    positionTooltip(tooltip, event);
+  });
+  document.addEventListener('mouseout', (event) => {
+    if (barAt(event.target)) {
+      const tooltip = document.getElementById('tooltip');
+      if (tooltip) {
+        tooltip.hidden = true;
+      }
+    }
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(drawCharts, 100);
+  });
 
   function bindToolbar() {
     document.querySelectorAll('[data-dropdown-toggle]').forEach((button) => {
