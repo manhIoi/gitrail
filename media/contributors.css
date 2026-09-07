@@ -1,0 +1,331 @@
+:root {
+  --bg: var(--vscode-editor-background, #15161a);
+  --panel: var(--vscode-sideBar-background, var(--vscode-editor-background, #1c1e24));
+  --panel-2: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background, #232631));
+  --border: var(--vscode-panel-border, var(--vscode-editorGroup-border, #343845));
+  --text: var(--vscode-editor-foreground, #d7dce8);
+  --muted: var(--vscode-descriptionForeground, #8b92a3);
+  --accent: var(--vscode-textLink-foreground, #6ea8fe);
+  --toolbar-bg: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background, #181a20));
+  --context-bg: var(--vscode-menu-background, var(--vscode-editor-background, #242630));
+  --context-border: var(--vscode-menu-border, var(--vscode-panel-border, #4a5060));
+  --context-hover: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #3a4771));
+  --card-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #191b20));
+  --error-fg: var(--vscode-errorForeground, #f48771);
+  /* Stated literally per theme, never as var(--something): a custom property that references
+     another resolves where it is declared, so an alias here would freeze the dark value. */
+  --add-color: #88d38f;
+  --del-color: #ff8b91;
+  --bar: #4c8dff;
+  --bar-hover: #8fb7ff;
+  --grid-line: rgba(255, 255, 255, 0.12);
+  --axis: rgba(255, 255, 255, 0.28);
+  --font-size: 12px;
+}
+body.vscode-dark { color-scheme: dark; }
+body.vscode-light {
+  color-scheme: light;
+  --add-color: #1e7a1e;
+  --del-color: #bc2929;
+  --bar: #0969da;
+  --bar-hover: #0a4f9e;
+  --grid-line: rgba(0, 0, 0, 0.10);
+  --axis: rgba(0, 0, 0, 0.30);
+}
+/* Avatar palette: dark enough for white initials in both themes. Classes, not style="",
+   because the CSP blocks inline style attributes. */
+.avatar-0 { background: #c0392b; }
+.avatar-1 { background: #d35400; }
+.avatar-2 { background: #27ae60; }
+.avatar-3 { background: #16a085; }
+.avatar-4 { background: #2980b9; }
+.avatar-5 { background: #8e44ad; }
+.avatar-6 { background: #b8860b; }
+.avatar-7 { background: #c2185b; }
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  /* VS Code's default webview stylesheet adds "padding: 0 20px". */
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--vscode-font-family);
+  font-size: var(--font-size);
+  overflow: hidden;
+}
+button { font: inherit; }
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Toolbar: same 42px band and dropdown shell as the Log View's commit toolbar. */
+.toolbar {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  padding: 6px 8px;
+  background: var(--toolbar-bg);
+}
+.summary {
+  margin-left: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.toolbar-spacer { flex: 1 1 auto; }
+.icon-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.icon-button:hover {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+.icon-button svg { display: block; }
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  display: none;
+}
+.progress.active { display: block; }
+.progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: var(--accent);
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  from { left: -30%; }
+  to { left: 100%; }
+}
+
+.filter-dropdown {
+  position: relative;
+  flex: 0 0 auto;
+}
+.filter-dropdown-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1;
+}
+.filter-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.filter-dropdown-button:hover,
+.filter-dropdown.open .filter-dropdown-button {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+.filter-chevron {
+  position: relative;
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  color: inherit;
+  font-size: 0;
+  line-height: 0;
+}
+.filter-chevron::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translate(-50%, -68%) rotate(45deg);
+  transform-origin: center;
+}
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 40;
+  width: 170px;
+  display: none;
+  padding: 6px;
+  color: var(--text);
+  background: var(--context-bg);
+  border: 1px solid var(--context-border);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+.filter-dropdown.open .filter-menu { display: block; }
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px 4px 24px;
+  position: relative;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.filter-option:hover { background: var(--context-hover); }
+.filter-option.selected::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-65%) rotate(45deg);
+}
+
+/* Content */
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.banner.error {
+  margin: 12px 12px 0;
+  padding: 8px 12px;
+  color: var(--error-fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  white-space: pre-wrap;
+}
+.empty {
+  padding: 32px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  align-content: start;
+  padding: 12px;
+}
+.contributor-card {
+  min-width: 0;
+  padding: 14px 16px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avatar {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  user-select: none;
+}
+.identity {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.name {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.totals {
+  margin-top: 2px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.totals .add { color: var(--add-color); }
+.totals .del { color: var(--del-color); }
+.rank {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 1px 8px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-weight: 700;
+}
+.chart-host {
+  margin-top: 10px;
+  min-height: 150px;
+}
+.chart {
+  display: block;
+  width: 100%;
+  height: 150px;
+  overflow: visible;
+}
+.chart .bar { fill: var(--bar); }
+.chart .bar:hover { fill: var(--bar-hover); }
+.chart .grid-line {
+  stroke: var(--grid-line);
+  stroke-dasharray: 3 3;
+}
+.chart .axis { stroke: var(--axis); }
+.chart text {
+  fill: var(--muted);
+  font-family: var(--vscode-font-family);
+  font-size: 11px;
+}
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--context-bg);
+  border: 1px solid var(--context-border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}

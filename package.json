@@ -342,6 +342,7 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test": "npm run compile && node --test test/*.test.js",
+    "test:webview": "npm run compile && node test/render-contributors.js",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
