@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Add a **Contributors** panel, `Gitrail: Open Contributors`, in the style of GitHub's Insights → Contributors page: one card per author with a rank badge, commit / `++` / `--` totals, and a bar per week. A **Range** menu narrows to the last 1, 3, 6 or 12 months and a **Metric** menu ranks and charts by commits, additions or deletions; both are answered in the browser from data computed once, so switching them never waits on git. Every chart shares one y-axis so bars compare across people. Authors are grouped by email, case-insensitively and through `.mailmap`; merge commits are left out as GitHub does; binary files count toward commits but not lines. Avatars are initials on a colour chosen from the email — nothing is fetched, nothing leaves the machine.
 - The panel recomputes only when `HEAD` moves to a new commit, so `git fetch` and autofetch cost one `rev-parse` and nothing more, and the previous cards stay on screen under a progress bar while it works. Computation over a very large history is cut off after 60 seconds with a message rather than a progress bar that never ends.
